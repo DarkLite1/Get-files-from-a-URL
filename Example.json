@@ -1,0 +1,9 @@
+{
+  "MailTo": ["bob@contoso.com"],
+  "DeliveryNotes": {
+    "ExcelFiles": [
+      "C:\\Input\\Delivery notes Amazon.xlsx",
+      "C:\\Input\\Delivery notes Apple.xlsx"
+    ]
+  }
+}
