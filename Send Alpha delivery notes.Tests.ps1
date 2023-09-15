@@ -1,9 +1,16 @@
 #Requires -Modules Pester
 #Requires -Version 5.1
 
-BeforeAll {
+BeforeAll {    
+    $testInputFile = @{
+        MailTo                 = 'bob@contoso.com'
+        DropFolder             = (New-Item "TestDrive:/Get files" -ItemType Directory).FullName
+        ExcelFileWorksheetName = 'FilesToDownload'
+        MaxConcurrentJobs      = 5
+    }
+
     $testExcel = @{
-        FilePath    = 'TestDrive:/DeliveryNotes.xlsx'
+        FilePath    = Join-Path $testInputFile.DropFolder 'a.xlsx'
         FileContent = @(
             [PSCustomObject]@{
                 FileName = 'File1.pdf'
@@ -15,13 +22,6 @@ BeforeAll {
             }
         )
     }
-    
-    $testInputFile = @{
-        MailTo        = 'bob@contoso.com'
-        DeliveryNotes = @{
-            ExcelFiles = @($testExcel.FilePath)
-        }
-    }
 
     $testOutParams = @{
         FilePath = (New-Item "TestDrive:/Test.json" -ItemType File).FullName
@@ -30,14 +30,13 @@ BeforeAll {
 
     $testScript = $PSCommandPath.Replace('.Tests.ps1', '.ps1')
     $testParams = @{
-        ScriptName         = 'Test (Brecht)'
-        ImportFile         = $testOutParams.FilePath
-        ExcelWorksheetName = 'Tickets'
-        LogFolder          = New-Item 'TestDrive:/log' -ItemType Directory
-        ScriptAdmin        = 'admin@contoso.com'
+        ScriptName  = 'Test (Brecht)'
+        ImportFile  = $testOutParams.FilePath
+        LogFolder   = New-Item 'TestDrive:/log' -ItemType Directory
+        ScriptAdmin = 'admin@contoso.com'
     }
     
-    $testExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testParams.ExcelWorksheetName
+    # $testExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testParams.ExcelFileWorksheetName
 
     Mock Send-MailHC
     Mock Write-EventLog
@@ -83,7 +82,10 @@ Describe 'send an e-mail to the admin when' {
         }
         Context 'property' {
             It '<_> not found' -ForEach @(
-                'MailTo'
+                'MailTo',
+                'MaxConcurrentJobs',
+                'DropFolder', 
+                'ExcelFileWorksheetName'
             ) {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
                 $testNewInputFile.$_ = $null
@@ -101,31 +103,27 @@ Describe 'send an e-mail to the admin when' {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'DeliveryNotes.<_> not found' -ForEach @(
-                'ExcelFiles'
-            ) {
+            It 'MaxConcurrentJobs is not a number' {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
-                $testNewInputFile.DeliveryNotes.$_ = $null
+                $testNewInputFile.MaxConcurrentJobs = 'a'
     
                 $testNewInputFile | ConvertTo-Json -Depth 5 | 
                 Out-File @testOutParams
-                    
+                
                 .$testScript @testParams
-                    
+        
                 Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-                        (&$MailAdminParams) -and 
-                        ($Message -like "*$ImportFile*Property 'DeliveryNotes.$_' not found*")
+                    (&$MailAdminParams) -and
+                    ($Message -like "*$ImportFile*Property 'MaxConcurrentJobs' needs to be a number, the value 'a' is not supported*")
                 }
                 Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'DeliveryNotes.ExcelFiles path not found' {
+            It 'DropFolder path not found' {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
-                $testNewInputFile.DeliveryNotes.ExcelFiles = @(
-                    'TestDrive:/notFound.xlsx'
-                )
-    
+                $testNewInputFile.DropFolder = 'TestDrive:/notFound'
+                
                 $testNewInputFile | ConvertTo-Json -Depth 5 | 
                 Out-File @testOutParams
                     
@@ -133,7 +131,7 @@ Describe 'send an e-mail to the admin when' {
                     
                 Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
                         (&$MailAdminParams) -and 
-                        ($Message -like "*$ImportFile*Property 'DeliveryNotes.ExcelFiles': Path 'TestDrive:/notFound.xlsx' not found*")
+                        ($Message -like "*$ImportFile*Property 'DropFolder': Path 'TestDrive:/notFound' not found*")
                 }
                 Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
                     $EntryType -eq 'Error'
@@ -141,60 +139,44 @@ Describe 'send an e-mail to the admin when' {
             }
         }
     }
+}
+Describe 'an Error.html file is saved in the Excel file output folder when' {
+    BeforeEach {
+        Remove-Item "$($testInputFile.DropFolder)\*" -Recurse -ErrorAction Ignore
+
+        $testInputFile | ConvertTo-Json -Depth 5 | 
+        Out-File @testOutParams
+    }
     Context 'the Excel file' {
-        It 'is missing the sheet defined in ExcelWorksheetName' {   
-            $testInputFile | ConvertTo-Json -Depth 5 | 
-            Out-File @testOutParams
+        It 'is missing the sheet defined in ExcelFileWorksheetName' {
+            $testExcel.FileContent | 
+            Export-Excel -Path $testExcel.FilePath -WorksheetName 'wrong'
 
-            $testNewParams = $testParams.Clone()
-            $testNewParams.ExcelWorksheetName = 'wrong'
-
-            .$testScript @testNewParams
+            .$testScript @testParams
                 
-            Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-                    (&$MailAdminParams) -and 
-                    ($Message -like "Excel file '*.xlsx' does not contain worksheet '$($testNewParams.ExcelWorksheetName)'*")
-            }
-            Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
-                $EntryType -eq 'Error'
-            }
-        } -Tag test
+            $testErrorFile = Get-ChildItem -Path $testInputFile.DropFolder -Filter 'Error.html' -Recurse
+
+            Get-Content -Path $testErrorFile.FullName -Raw | 
+            Should -BeLike "*Worksheet '$($testInputFile.ExcelFileWorksheetName)' not found*"
+        }
         Context 'is missing property' {
             It '<_>' -ForEach @(
                 'FileName', 'URL'
             ) {
                 $testNewExcel = Copy-ObjectHC $testExcel
 
-                $testNewExcel.FilePath = 'TestDrive:/DeliveryNotes2.xlsx'
-                $testNewExcel.FileContent = $testNewExcel.FileContent[0] 
-
-                $testNewExcel.FileContent.$_ = $null
+                $testNewExcel.FileContent[0].$_ = $null
                 
-                $testExportParams = @{
-                    Path          = $testNewExcel.FilePath
-                    WorksheetName = $testParams.ExcelWorksheetName
-                    ClearSheet    = $true
-                    Verbose       = $false
-                }
-                $testNewExcel.FileContent | Export-Excel @testExportParams
-
-                $testNewInputFile = Copy-ObjectHC $testInputFile
-                $testNewInputFile.DeliveryNotes.ExcelFiles = $testNewExcel.FilePath
-    
-                $testNewInputFile | ConvertTo-Json -Depth 5 | 
-                Out-File @testOutParams
+                $testNewExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testInputFile.ExcelFileWorksheetName
 
                 .$testScript @testParams
-                    
-                Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-                        (&$MailAdminParams) -and 
-                        ($Message -like "*Excel file '*DeliveryNotes2.xlsx': Property '$_' not found*")
-                }
-                Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
-                    $EntryType -eq 'Error'
-                }
-            }
-        }
+
+                $testErrorFile = Get-ChildItem -Path $testInputFile.DropFolder -Filter 'Error.html' -Recurse
+
+                Get-Content -Path $testErrorFile.FullName -Raw | 
+                Should -BeLike "*Property '$_' not found*"
+            } 
+        } -Tag test
     }
 }
 Describe 'when all tests pass' {

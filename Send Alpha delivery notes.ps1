@@ -16,16 +16,19 @@
     .PARAMETER MailTo
         E-mail addresses of where to send the summary e-mail
 
-    .PARAMETER DeliveryNotes.ExcelFiles
-        Collection of Excel files where each Excel file contains a sheet with 
-        the delivery notes to download.
+    .PARAMETER DropFolder
+        The folder where the Excel files are located. Each Excel file contains 
+        a sheet with the delivery notes to download.
 
         Mandatory fields in the Excel sheet are:
         - FileName
         - URL
 
-    .PARAMETER ExcelWorksheetName
+    .PARAMETER ExcelFileWorksheetName
         The name of the Excel worksheet where the download details are stored
+
+    .PARAMETER MaxConcurrentJobs
+        Amount of web requests that are made at the same time
 #>
 
 [CmdLetBinding()]
@@ -34,8 +37,6 @@ Param (
     [String]$ScriptName,
     [Parameter(Mandatory)]
     [String]$ImportFile,
-    [String]$ExcelWorksheetName = 'FilesToDownload',
-    [Int]$MaxConcurrentJobs = 15,
     [String]$LogFolder = "$env:POWERSHELL_LOG_FOLDER\Application specific\Alpha\$ScriptName",
     [String[]]$ScriptAdmin = @(
         $env:POWERSHELL_SCRIPT_ADMIN,
@@ -85,13 +86,20 @@ Begin {
             if (-not ($MailTo = $file.MailTo)) {
                 throw "Property 'MailTo' not found"
             }
-            if (-not ($DeliveryNotesExcelFiles = $file.DeliveryNotes.ExcelFiles)) {
-                throw "Property 'DeliveryNotes.ExcelFiles' not found"
+            if (-not ($MaxConcurrentJobs = $file.MaxConcurrentJobs)) {
+                throw "Property 'MaxConcurrentJobs' not found"
             }
-            foreach ($file in $DeliveryNotesExcelFiles) {
-                if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-                    throw "Property 'DeliveryNotes.ExcelFiles': Path '$file' not found"
-                }
+            if (-not ($DropFolder = $file.DropFolder)) {
+                throw "Property 'DropFolder' not found"
+            }
+            if (-not ($ExcelFileWorksheetName = $file.ExcelFileWorksheetName)) {
+                throw "Property 'ExcelFileWorksheetName' not found"
+            }
+            if (-not ($file.MaxConcurrentJobs -is [int])) {
+                throw "Property 'MaxConcurrentJobs' needs to be a number, the value '$($file.MaxConcurrentJobs)' is not supported."
+            }
+            if (-not (Test-Path -LiteralPath $DropFolder -PathType Container)) {
+                throw "Property 'DropFolder': Path '$DropFolder' not found"
             }
         }
         Catch {
@@ -99,59 +107,23 @@ Begin {
         }
         #endregion
 
-        #region Create tasks object
-        $tasks = $DeliveryNotesExcelFiles | ForEach-Object {
-            [PSCustomObject]@{
-                Jobs      = @()
-                ExcelFile = @{
-                    Item    = Get-Item -LiteralPath $_ -ErrorAction 'Stop'
-                    Content = @()
-                }
-            }
+        #region Get Excel files in drop folder
+        $params = @{
+            LiteralPath = $DropFolder
+            Filter      = '*.xlsx'
+            ErrorAction = 'Stop'
+        }
+        $dropFolderExcelFiles = Get-ChildItem @params
+
+        if (-not $dropFolderExcelFiles) {
+            $M = "No Excel files found in drop folder '$DropFolder'"
+            Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+
+            Write-EventLog @EventEndParams
+
+            Exit
         }
         #endregion
-
-        foreach ($task in $tasks) {
-            #region Import Excel file
-            try {
-                $M = "Import Excel file '$($task.ExcelFile.Item.FullName)'"
-                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-    
-                $params = @{
-                    Path          = $task.ExcelFile.Item.FullName
-                    WorksheetName = $ExcelWorksheetName
-                    ErrorAction   = 'Stop'
-                    DataOnly      = $true
-                }
-                $task.ExcelFile.Content += Import-Excel @params |
-                Select-Object -Property * -ExcludeProperty 'Error', 
-                'DownloadedOn'
-    
-                $M = "Imported {0} rows from Excel file '{1}'" -f
-                $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
-                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-            }
-            catch {
-                throw "Excel file '$($task.ExcelFile.Item.FullName)' does not contain worksheet '$($params.WorksheetName)'"
-            }
-            #endregion
-            
-            #region Test Excel file
-            foreach ($row in $task.ExcelFile.Content) {
-                try {
-                    if (-not ($row.FileName)) {
-                        throw "Property 'FileName' not found"
-                    }
-                    if (-not ($row.URL)) {
-                        throw "Property 'URL' not found"
-                    }
-                }
-                catch {
-                    throw "Excel file '$($task.ExcelFile.Item.FullName)': $_"
-                }
-            }
-            #endregion
-        }
     }
     Catch {
         Write-Warning $_
@@ -163,6 +135,130 @@ Begin {
 
 Process {
     Try {
+        #region Create general output folder
+        $outputFolder = Join-Path -Path $DropFolder -ChildPath 'Output'
+
+        $null = New-Item -Path $outputFolder -ItemType Directory -EA Ignore
+        #endregion
+
+        $tasks = @()
+
+        foreach ($file in $dropFolderExcelFiles) {
+            #region Test if file is still there
+            if (-not (Test-Path -LiteralPath $file.FullName -PathType Leaf)) {
+                $M = "Excel file '$($file.FullName)' removed in the meantime"
+                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                
+                Continue
+            }
+            #endregion
+
+            #region Create Excel specific output folder
+            try {
+                $excelFileOutputFolder = '{0}\{1} {2}' -f 
+                $outputFolder, $startDate, $file.BaseName
+                
+                New-Item -Path $excelFileOutputFolder -ItemType 'Directory' -Force -ErrorAction 'Stop'
+            }
+            Catch {
+                throw "Failed creating the Excel output folder '$excelFileOutputFolder': $_"
+            }
+            #endregion
+
+            try {
+                $task = [PSCustomObject]@{
+                    Jobs      = @()
+                    ExcelFile = @{
+                        Item         = $file
+                        Content      = @()
+                        OutputFolder = $excelFileOutputFolder
+                        Error        = $null
+                    }
+                }
+
+                try {
+                    #region Import Excel file
+                    try {
+                        $M = "Import Excel file '$($task.ExcelFile.Item.FullName)'"
+                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+            
+                        $params = @{
+                            Path          = $task.ExcelFile.Item.FullName
+                            WorksheetName = $ExcelFileWorksheetName
+                            ErrorAction   = 'Stop'
+                            DataOnly      = $true
+                        }
+                        $task.ExcelFile.Content += Import-Excel @params |
+                        Select-Object -Property * -ExcludeProperty 'Error', 
+                        'DownloadedOn'
+            
+                        $M = "Imported {0} rows from Excel file '{1}'" -f
+                        $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
+                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                    }
+                    catch {
+                        $error.RemoveAt(0)
+                        throw "Worksheet '$($params.WorksheetName)' not found"
+                    }
+                    #endregion
+
+                    #region Test Excel file
+                    foreach ($row in $task.ExcelFile.Content) {
+                        if (-not ($row.FileName)) {
+                            throw "Property 'FileName' not found"
+                        }
+                        if (-not ($row.URL)) {
+                            throw "Property 'URL' not found"
+                        }
+                    }
+                    #endregion
+                }
+                catch {
+                    Write-Warning "Excel input file error: $_"
+                    $task.ExcelFile.Error = $_
+    
+                    #region Create Error.html file                    
+                    "
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                    .myDiv {
+                    border: 5px outset red;
+                    background-color: lightblue;    
+                    text-align: center;
+                    }
+                    </style>
+                    </head>
+                    <body>
+
+                    <h1>Error detected in the Excel sheet</h1>
+
+                    <div class=`"myDiv`">
+                    <h2>$_</h2>
+                    </div>
+
+                    <p>Please fix this error and try again.</p>
+
+                    </body>
+                    </html>
+                    " | Out-File -LiteralPath "$excelFileOutputFolder\Error.html" -Encoding utf8
+                    #endregion
+                    
+                    $error.RemoveAt(0)
+                    Continue
+                }
+            }
+            catch {
+    
+            }
+            finally {
+                $tasks += $task
+            }
+            
+
+        }
+
         #region Create download folder
         $downloadFolder = New-Item -Path $logParams.LogFolder -Name 'PDF files' -ItemType Directory
         #endregion
