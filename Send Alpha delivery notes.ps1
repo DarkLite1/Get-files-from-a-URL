@@ -158,11 +158,24 @@ Process {
                 $excelFileOutputFolder = '{0}\{1} {2}' -f 
                 $outputFolder, $startDate, $file.BaseName
                 
-                New-Item -Path $excelFileOutputFolder -ItemType 'Directory' -Force -ErrorAction 'Stop'
+                $null = New-Item -Path $excelFileOutputFolder -ItemType 'Directory' -Force -ErrorAction 'Stop'
+
+                Write-Verbose "Excel file output folder '$excelFileOutputFolder'"
             }
             Catch {
                 throw "Failed creating the Excel output folder '$excelFileOutputFolder': $_"
             }
+            #endregion
+
+            #region Copy original Excel file to output folder
+            $moveParams = @{
+                LiteralPath = $file.FullName
+                Destination = '{0}\{1}' -f $excelFileOutputFolder, $file.Name
+            }
+
+            Write-Verbose "Move original Excel file '$($moveParams.LiteralPath)' to output folder '$($moveParams.Destination)'"
+
+            Move-Item @moveParams
             #endregion
 
             try {
@@ -183,7 +196,7 @@ Process {
                         Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
             
                         $params = @{
-                            Path          = $task.ExcelFile.Item.FullName
+                            Path          = $moveParams.Destination
                             WorksheetName = $ExcelFileWorksheetName
                             ErrorAction   = 'Stop'
                             DataOnly      = $true

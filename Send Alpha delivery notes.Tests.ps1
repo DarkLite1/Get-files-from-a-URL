@@ -10,7 +10,7 @@ BeforeAll {
     }
 
     $testExcel = @{
-        FilePath    = Join-Path $testInputFile.DropFolder 'a.xlsx'
+        FilePath    = Join-Path $testInputFile.DropFolder 'File.xlsx'
         FileContent = @(
             [PSCustomObject]@{
                 FileName = 'File1.pdf'
@@ -35,8 +35,6 @@ BeforeAll {
         LogFolder   = New-Item 'TestDrive:/log' -ItemType Directory
         ScriptAdmin = 'admin@contoso.com'
     }
-    
-    # $testExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testParams.ExcelFileWorksheetName
 
     Mock Send-MailHC
     Mock Write-EventLog
@@ -177,15 +175,30 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
                 Should -BeLike "*Property '$_' not found*"
             } 
         }
-    } -Tag test
+    }
 }
 Describe 'when all tests pass' {
     BeforeAll {
         $testInputFile | ConvertTo-Json -Depth 5 | 
         Out-File @testOutParams
 
+        $testExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testInputFile.ExcelFileWorksheetName
+
         .$testScript @testParams
+
+        $testExcelFileOutputFolder = Get-ChildItem -Path "$($testInputFile.DropFolder)\Output" -Filter '* File' -Directory
     }
+    It 'create an Excel file specific output folder in the DropFolder' {
+        $testExcelFileOutputFolder.FullName | Should -Exist
+    } -Tag test
+    It 'Move the original Excel file to the output folder' {
+        Get-ChildItem -Path $testInputFile.DropFolder -File | 
+        Should -BeNullOrEmpty
+
+        "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
+        Should -Exist
+    } -Tag test
+
 
     It 'create a download folder in the log folder' {
         Join-Path $testParams.LogFolder 'PDF Files' | 
