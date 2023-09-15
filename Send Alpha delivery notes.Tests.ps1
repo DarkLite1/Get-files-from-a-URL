@@ -176,8 +176,8 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
                 Get-Content -Path $testErrorFile.FullName -Raw | 
                 Should -BeLike "*Property '$_' not found*"
             } 
-        } -Tag test
-    }
+        }
+    } -Tag test
 }
 Describe 'when all tests pass' {
     BeforeAll {
