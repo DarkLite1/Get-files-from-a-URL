@@ -255,12 +255,96 @@ Process {
 
                     </body>
                     </html>
-                    " | Out-File -LiteralPath "$excelFileOutputFolder\Error.html" -Encoding utf8
+                    " | Out-File -LiteralPath "$($task.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
                     #endregion
                     
                     $error.RemoveAt(0)
                     Continue
                 }
+
+                #region Create download folder
+                $downloadFolder = New-Item -Path $logParams.LogFolder -Name 'PDF files' -ItemType Directory
+                #endregion
+
+                #region Create Excel objects
+                foreach ($row in $excelFile) {
+                    $row | Add-Member -NotePropertyMembers @{
+                        Destination  = Join-Path $downloadFolder $row.FileName
+                        DownloadedOn = $null
+                        Error        = $null
+                    }
+                }
+                #endregion
+
+                #region Download files
+                $M = "Download $($excelFile.count) delivery notes"
+                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+
+
+                $jobs = @()
+
+                foreach ($row in $excelFile) {
+                    Write-Verbose "Download file '$($row.Url)' to '$($row.Destination)'"
+                
+                    $jobs += Start-Job -ScriptBlock {
+                        try {
+                            $result = $using:row
+
+                            $invokeParams = @{
+                                Uri         = $result.Url 
+                                OutFile     = $result.Destination 
+                                TimeoutSec  = 10 
+                                ErrorAction = 'Stop'
+                            }
+                            Invoke-WebRequest @invokeParams
+                        
+                            $result.DownloadedOn = Get-Date   
+                        }
+                        catch {
+                            $statusCode = $_.Exception.Response.StatusCode.value__
+
+                            if ($statusCode) {
+                                $errorMessage = switch ($statusCode) {
+                                    '404' { 
+                                        'Status code: 404 Not found'; break
+                                    }
+                                    Default {
+                                        "Status code: $_"
+                                    }
+                                }
+                            }
+                            else {
+                                $errorMessage = $_
+                            }
+                    
+                            $result.Error = "Download failed: $errorMessage"
+                            $Error.RemoveAt(0)
+                        }
+                        finally {
+                            $result
+                        }
+                    }
+
+                    #region Wait for max running jobs
+                    $waitParams = @{
+                        Name       = $jobs | Where-Object { $_ }
+                        MaxThreads = $MaxConcurrentJobs
+                    }
+                    Wait-MaxRunningJobsHC @waitParams
+                    #endregion
+                }
+                #endregion
+
+                #region Wait for jobs to finish
+                $M = "Wait for all $($jobs.count) jobs to finish"
+                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+     
+                $null = $jobs | Wait-Job
+                #endregion
+     
+                #region Get job results and job errors   
+                $jobResults = $jobs | Receive-Job
+                #endregion
             }
             catch {
     
@@ -268,94 +352,7 @@ Process {
             finally {
                 $tasks += $task
             }
-            
-
         }
-
-        #region Create download folder
-        $downloadFolder = New-Item -Path $logParams.LogFolder -Name 'PDF files' -ItemType Directory
-        #endregion
-
-        #region Create Excel objects
-        foreach ($row in $excelFile) {
-            $row | Add-Member -NotePropertyMembers @{
-                Destination  = Join-Path $downloadFolder $row.FileName
-                DownloadedOn = $null
-                Error        = $null
-            }
-        }
-        #endregion
-
-        #region Download files
-        $M = "Download $($excelFile.count) delivery notes"
-        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-
-
-        $jobs = @()
-
-        foreach ($row in $excelFile) {
-            Write-Verbose "Download file '$($row.Url)' to '$($row.Destination)'"
-                
-            $jobs += Start-Job -ScriptBlock {
-                try {
-                    $result = $using:row
-
-                    $invokeParams = @{
-                        Uri         = $result.Url 
-                        OutFile     = $result.Destination 
-                        TimeoutSec  = 10 
-                        ErrorAction = 'Stop'
-                    }
-                    Invoke-WebRequest @invokeParams
-                        
-                    $result.DownloadedOn = Get-Date   
-                }
-                catch {
-                    $statusCode = $_.Exception.Response.StatusCode.value__
-
-                    if ($statusCode) {
-                        $errorMessage = switch ($statusCode) {
-                            '404' { 
-                                'Status code: 404 Not found'; break
-                            }
-                            Default {
-                                "Status code: $_"
-                            }
-                        }
-                    }
-                    else {
-                        $errorMessage = $_
-                    }
-                    
-                    $result.Error = "Download failed: $errorMessage"
-                    $Error.RemoveAt(0)
-                }
-                finally {
-                    $result
-                }
-            }
-            #endregion
-
-            #region Wait for max running jobs
-            $waitParams = @{
-                Name       = $jobs | Where-Object { $_ }
-                MaxThreads = $MaxConcurrentJobs
-            }
-            Wait-MaxRunningJobsHC @waitParams
-            #endregion
-        }
-        #endregion
-
-        #region Wait for jobs to finish
-        $M = "Wait for all $($jobs.count) jobs to finish"
-        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-     
-        $null = $jobs | Wait-Job
-        #endregion
-     
-        #region Get job results and job errors   
-        $jobResults = $jobs | Receive-Job
-        #endregion
     }
     Catch {
         Write-Warning $_
