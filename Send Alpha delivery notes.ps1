@@ -263,7 +263,7 @@ Process {
                 }
 
                 #region Create download folder
-                $downloadFolder = New-Item -Path $logParams.LogFolder -Name 'PDF files' -ItemType Directory
+                $downloadFolder = New-Item -Path $task.ExcelFile.OutputFolder -Name 'PDF files' -ItemType Directory
                 #endregion
 
                 #region Create Excel objects

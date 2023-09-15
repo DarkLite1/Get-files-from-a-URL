@@ -190,20 +190,19 @@ Describe 'when all tests pass' {
     }
     It 'create an Excel file specific output folder in the DropFolder' {
         $testExcelFileOutputFolder.FullName | Should -Exist
-    } -Tag test
+    }
     It 'Move the original Excel file to the output folder' {
         Get-ChildItem -Path $testInputFile.DropFolder -File | 
         Should -BeNullOrEmpty
 
         "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
         Should -Exist
-    } -Tag test
-
-
-    It 'create a download folder in the log folder' {
-        Join-Path $testParams.LogFolder 'PDF Files' | 
-        Should -Exist
     }
+    It "create the folder 'PDF files' in the Excel specific output folder'" {
+        Join-Path $testExcelFileOutputFolder.FullName 'PDF Files' | 
+        Should -Exist
+    }  -Tag test
+
     It 'download the delivery notes' {
         Should -Invoke Invoke-WebRequest -Times $testExcel.FileContent.Count -Exactly -Scope Describe
 
