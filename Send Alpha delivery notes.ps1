@@ -204,6 +204,7 @@ Process {
                         DownloadResults = $null
                         ZipFile         = $null
                     }
+                    Error      = $null
                 }
 
                 try {
@@ -406,7 +407,8 @@ Process {
                 #endregion
             }
             catch {
-    
+                $task.Error = $_
+                $error.RemoveAt(0)
             }
             finally {
                 $tasks += $task
