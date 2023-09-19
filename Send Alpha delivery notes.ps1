@@ -180,7 +180,10 @@ Process {
 
             try {
                 $task = [PSCustomObject]@{
-                    Jobs      = @()
+                    Job       = @{
+                        Started = @()
+                        Result  = @()
+                    }
                     ExcelFile = @{
                         Item         = $file
                         Content      = @()
@@ -202,8 +205,7 @@ Process {
                             DataOnly      = $true
                         }
                         $task.ExcelFile.Content += Import-Excel @params |
-                        Select-Object -Property * -ExcludeProperty 'Error', 
-                        'DownloadedOn'
+                        Select-Object -Property 'Url', 'FileName'
             
                         $M = "Imported {0} rows from Excel file '{1}'" -f
                         $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
@@ -263,32 +265,36 @@ Process {
                 }
 
                 #region Create download folder
-                $downloadFolder = New-Item -Path $task.ExcelFile.OutputFolder -Name 'PDF files' -ItemType Directory
-                #endregion
-
-                #region Create Excel objects
-                foreach ($row in $excelFile) {
-                    $row | Add-Member -NotePropertyMembers @{
-                        Destination  = Join-Path $downloadFolder $row.FileName
-                        DownloadedOn = $null
-                        Error        = $null
-                    }
-                }
+                $downloadFolder = (New-Item -Path $task.ExcelFile.OutputFolder -Name 'PDF files' -ItemType 'Directory').FullName
                 #endregion
 
                 #region Download files
-                $M = "Download $($excelFile.count) delivery notes"
+                $M = "Download $($task.ExcelFile.Content.count) files to '$downloadFolder'"
                 Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
 
-
-                $jobs = @()
-
-                foreach ($row in $excelFile) {
-                    Write-Verbose "Download file '$($row.Url)' to '$($row.Destination)'"
+                foreach ($row in $task.ExcelFile.Content) {
+                    Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
                 
-                    $jobs += Start-Job -ScriptBlock {
+                    $task.Job.Started += Start-Job -ScriptBlock {
+                        Param (
+                            [Parameter(Mandatory)]
+                            [String]$Url,
+                            [Parameter(Mandatory)]
+                            [String]$DownloadFolder,
+                            [Parameter(Mandatory)]
+                            [String]$FileName
+                        )
+                            
                         try {
-                            $result = $using:row
+                            $result = [PSCustomObject]@{
+                                Url          = $Url
+                                FileName     = $FileName
+                                Destination  = $null
+                                DownloadedOn = $null
+                                Error        = $null
+                            }
+
+                            $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
 
                             $invokeParams = @{
                                 Uri         = $result.Url 
@@ -323,11 +329,11 @@ Process {
                         finally {
                             $result
                         }
-                    }
+                    } -ArgumentList $row.Url, $downloadFolder, $row.FileName
 
                     #region Wait for max running jobs
                     $waitParams = @{
-                        Name       = $jobs | Where-Object { $_ }
+                        Name       = $task.Job.Started | Where-Object { $_ }
                         MaxThreads = $MaxConcurrentJobs
                     }
                     Wait-MaxRunningJobsHC @waitParams
@@ -336,14 +342,14 @@ Process {
                 #endregion
 
                 #region Wait for jobs to finish
-                $M = "Wait for all $($jobs.count) jobs to finish"
+                $M = "Wait for all $($task.Job.Started.count) jobs to finish"
                 Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
      
-                $null = $jobs | Wait-Job
+                $null = $task.Job.Started | Wait-Job
                 #endregion
      
                 #region Get job results and job errors   
-                $jobResults = $jobs | Receive-Job
+                $task.Jobs.Result += $task.Job.Started | Receive-Job
                 #endregion
             }
             catch {
@@ -392,7 +398,7 @@ End {
         #region Error counters
         $counter = @{
             RowsInExcel     = (
-                $excelFile | Measure-Object
+                $task.ExcelFile.Content | Measure-Object
             ).Count
             DownloadedFiles = (
                 $jobResults.Where({ $_.DownloadedOn }) | Measure-Object

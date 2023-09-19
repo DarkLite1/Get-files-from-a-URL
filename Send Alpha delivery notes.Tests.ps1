@@ -2,6 +2,10 @@
 #Requires -Version 5.1
 
 BeforeAll {    
+    $realCmdLet = @{
+        StartJob = Get-Command Start-Job
+    }
+
     $testInputFile = @{
         MailTo                 = 'bob@contoso.com'
         DropFolder             = (New-Item "TestDrive:/Get files" -ItemType Directory).FullName
@@ -38,7 +42,6 @@ BeforeAll {
 
     Mock Send-MailHC
     Mock Write-EventLog
-    Mock Invoke-WebRequest
 }
 Describe 'the mandatory parameters are' {
     It '<_>' -ForEach @('ImportFile', 'ScriptName') {
@@ -179,6 +182,8 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
 }
 Describe 'when all tests pass' {
     BeforeAll {
+        Mock Wait-MaxRunningJobsHC
+
         $testInputFile | ConvertTo-Json -Depth 5 | 
         Out-File @testOutParams
 
@@ -201,18 +206,10 @@ Describe 'when all tests pass' {
     It "create the folder 'PDF files' in the Excel specific output folder'" {
         Join-Path $testExcelFileOutputFolder.FullName 'PDF Files' | 
         Should -Exist
-    }  -Tag test
-
-    It 'download the delivery notes' {
-        Should -Invoke Invoke-WebRequest -Times $testExcel.FileContent.Count -Exactly -Scope Describe
-
-        $testExcel.FileContent | ForEach-Object {
-            Should -Invoke Invoke-WebRequest -Times 1 -Exactly -Scope Describe -ParameterFilter {
-                ($Uri -eq $_.Url) -and
-                ($OutFile -like "*$($_.Destination)")
-            }
-        }
     }
+    It 'download the delivery notes' {
+        Should -Invoke Wait-MaxRunningJobsHC -Times $testExcel.FileContent.Count -Exactly -Scope Describe
+    } -Tag test
     Context 'export an Excel file' {
         BeforeAll {
             $testExportedExcelRows = @(
