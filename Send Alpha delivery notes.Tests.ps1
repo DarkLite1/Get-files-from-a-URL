@@ -207,7 +207,7 @@ Describe 'when all tests pass' {
         Join-Path $testExcelFileOutputFolder.FullName 'PDF Files' | 
         Should -Exist
     }
-    It 'download the delivery notes' {
+    It 'download the files' {
         Should -Invoke Wait-MaxRunningJobsHC -Times $testExcel.FileContent.Count -Exactly -Scope Describe
     }
     Context 'export an Excel file to the output folder' {
