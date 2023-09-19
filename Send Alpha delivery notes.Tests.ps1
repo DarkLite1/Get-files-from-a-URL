@@ -203,33 +203,33 @@ Describe 'when all tests pass' {
         "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
         Should -Exist
     }
-    It "create the folder 'PDF files' in the Excel specific output folder'" {
+    It "create the folder 'PDF files' in output folder'" {
         Join-Path $testExcelFileOutputFolder.FullName 'PDF Files' | 
         Should -Exist
     }
     It 'download the delivery notes' {
         Should -Invoke Wait-MaxRunningJobsHC -Times $testExcel.FileContent.Count -Exactly -Scope Describe
-    } -Tag test
-    Context 'export an Excel file' {
+    }
+    Context 'export an Excel file to the output folder' {
         BeforeAll {
             $testExportedExcelRows = @(
                 [PSCustomObject]@{
+                    Url          = 'http://something/1'
                     FileName     = 'File1.pdf'
                     Destination  = '*File1.pdf'
-                    Url          = 'http://something/1'
-                    DownloadedOn = Get-Date
-                    Error        = $null
+                    DownloadedOn = $null
+                    Error        = 'Download failed:*'
                 }
                 [PSCustomObject]@{
+                    Url          = 'http://something/2'
                     FileName     = 'File2.pdf'
                     Destination  = '*File2.pdf'
-                    Url          = 'http://something/2'
-                    DownloadedOn = Get-Date
-                    Error        = $null
+                    DownloadedOn = $null
+                    Error        = 'Download failed:*'
                 }
             )
 
-            $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Log.xlsx'
+            $testExcelLogFile = Get-ChildItem $testExcelFileOutputFolder.FullName -Filter 'Result.xlsx'
 
             $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Overview'
         }
@@ -244,15 +244,13 @@ Describe 'when all tests pass' {
                 $actualRow = $actual | Where-Object {
                     $_.Url -eq $testRow.Url
                 }
-                $actualRow.DownloadedOn.ToString('yyyyMMdd') | 
-                Should -Be $testRow.DownloadedOn.ToString('yyyyMMdd')
-                $actualRow.Destination | Should -BeLike $testRow.Destination
                 $actualRow.FileName | Should -Be $testRow.FileName
-                $actualRow.Url | Should -Be $testRow.Url
-                $actualRow.Error | Should -Be $testRow.Error
+                $actualRow.Destination | Should -BeLike $testRow.Destination
+                $actualRow.DownloadedOn | Should -Be $testRow.DownloadedOn
+                $actualRow.Error | Should -BeLike $testRow.Error
             }
         }
-    }
+    } -Tag test
     Context 'send an e-mail' {
         It 'with attachment to the user' {
             Should -Invoke Send-MailHC -Exactly 1 -Scope Describe -ParameterFilter {

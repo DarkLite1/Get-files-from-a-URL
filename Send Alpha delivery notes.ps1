@@ -51,7 +51,17 @@ Begin {
         $startDate = (Get-ScriptRuntimeHC -Start).ToString('yyyy-MM-dd HHmmss')
         
         $Error.Clear()
+
+        #region Test 7 zip installed
+        $7zipPath = "$env:ProgramFiles\7-Zip\7z.exe"
         
+        if (-not (Test-Path -Path $7zipPath -PathType 'Leaf')) {
+            throw "7 zip file '$7zipPath' not found"
+        }
+        
+        Set-Alias Start-SevenZip $7zipPath
+        #endregion
+
         #region Logging
         try {
             $joinParams = @{
@@ -180,15 +190,19 @@ Process {
 
             try {
                 $task = [PSCustomObject]@{
-                    Job       = @{
+                    Job        = @{
                         Started = @()
                         Result  = @()
                     }
-                    ExcelFile = @{
+                    ExcelFile  = @{
                         Item         = $file
                         Content      = @()
                         OutputFolder = $excelFileOutputFolder
                         Error        = $null
+                    }
+                    OutputFile = @{
+                        DownloadResults = $null
+                        ZipFile         = $null
                     }
                 }
 
@@ -349,7 +363,46 @@ Process {
                 #endregion
      
                 #region Get job results and job errors   
-                $task.Jobs.Result += $task.Job.Started | Receive-Job
+                $task.Job.Result += $task.Job.Started | Receive-Job
+                #endregion
+
+                #region Export results to Excel
+                if ($task.Job.Result) {                  
+                    $task.OutputFile.DownloadResults = Join-Path $task.ExcelFile.OutputFolder 'Result.xlsx'
+
+                    $excelParams = @{
+                        Path               = $task.OutputFile.DownloadResults
+                        NoNumberConversion = '*'
+                        WorksheetName      = 'Overview'
+                        TableName          = 'Overview'
+                        AutoSize           = $true
+                        FreezeTopRow       = $true
+                    }
+
+                    $M = "Export $($task.Job.Result.count) rows to Excel file '$($excelParams.Path)'"
+                    Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+        
+                    $task.Job.Result | Select-Object -Property 'Url', 
+                    'FileName', 'Destination', 'DownloadedOn' , 'Error' |
+                    Export-Excel @excelParams
+                }
+                #endregion
+
+                #region Create zip file
+                if (
+                    ($task.ExcelFile.Content.Count) -eq 
+                    ($task.Job.Result.Count) -eq 
+                    ($task.Job.Result.where({ $_.DownloadedOn }).count)
+                ) {
+                    $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder 'Result.zip'
+
+                    $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.OutputFile.ZipFile)'"
+                    Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+
+                    $Source = $downloadFolder
+                    $Target = $task.OutputFile.ZipFile
+                    Start-SevenZip a -mx=9 $Target $Source    
+                }
                 #endregion
             }
             catch {
@@ -371,27 +424,6 @@ Process {
 End {
     try {
         $mailParams = @{ }
-
-        #region Export results to Excel
-        $excelParams = @{
-            Path               = $logFile + ' - Log.xlsx'
-            NoNumberConversion = '*'
-            WorksheetName      = 'Overview'
-            TableName          = 'Overview'
-            AutoSize           = $true
-            FreezeTopRow       = $true
-        }
-
-        $M = "Export $($jobResults.count) rows to Excel file '$($excelParams.Path)'"
-        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-        
-        $jobResults | 
-        Select-Object -Property * -ExcludeProperty 'PSShowComputerName', 
-        'RunspaceId', 'PSComputerName' |
-        Export-Excel @excelParams
-
-        $mailParams.Attachments = $excelParams.Path
-        #endregion
 
         #region Send mail to user
 
