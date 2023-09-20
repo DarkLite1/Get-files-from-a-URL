@@ -180,7 +180,7 @@ Process {
             #region Move original Excel file to output folder
             $moveParams = @{
                 LiteralPath = $file.FullName
-                Destination = '{0}\Original file - {1}' -f 
+                Destination = '{0}\Original input file - {1}' -f 
                 $excelFileOutputFolder, $file.Name
             }
 
