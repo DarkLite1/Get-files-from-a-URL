@@ -177,10 +177,11 @@ Process {
             }
             #endregion
 
-            #region Copy original Excel file to output folder
+            #region Move original Excel file to output folder
             $moveParams = @{
                 LiteralPath = $file.FullName
-                Destination = '{0}\{1}' -f $excelFileOutputFolder, $file.Name
+                Destination = '{0}\Original file - {1}' -f 
+                $excelFileOutputFolder, $file.Name
             }
 
             Write-Verbose "Move original Excel file '$($moveParams.LiteralPath)' to output folder '$($moveParams.Destination)'"
@@ -369,7 +370,7 @@ Process {
 
                 #region Export results to Excel
                 if ($task.Job.Result) {                  
-                    $task.OutputFile.DownloadResults = Join-Path $task.ExcelFile.OutputFolder 'Result.xlsx'
+                    $task.OutputFile.DownloadResults = Join-Path $task.ExcelFile.OutputFolder 'Download results.xlsx'
 
                     $excelParams = @{
                         Path               = $task.OutputFile.DownloadResults

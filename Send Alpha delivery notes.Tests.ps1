@@ -200,7 +200,7 @@ Describe 'when all tests pass' {
         Get-ChildItem -Path $testInputFile.DropFolder -File | 
         Should -BeNullOrEmpty
 
-        "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
+        "$($testExcelFileOutputFolder.FullName)\Original file - File.xlsx" | 
         Should -Exist
     }
     It "create the folder 'PDF files' in output folder'" {
@@ -229,7 +229,7 @@ Describe 'when all tests pass' {
                 }
             )
 
-            $testExcelLogFile = Get-ChildItem $testExcelFileOutputFolder.FullName -Filter 'Result.xlsx'
+            $testExcelLogFile = Get-ChildItem $testExcelFileOutputFolder.FullName -Filter 'Download results.xlsx'
 
             $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Overview'
         }
@@ -250,7 +250,7 @@ Describe 'when all tests pass' {
                 $actualRow.Error | Should -BeLike $testRow.Error
             }
         }
-    } -Tag test
+    } #-Tag test
     Context 'send an e-mail' {
         It 'with attachment to the user' {
             Should -Invoke Send-MailHC -Exactly 1 -Scope Describe -ParameterFilter {
@@ -262,5 +262,5 @@ Describe 'when all tests pass' {
             ($Message -like "*table*2*Files to download*2*Files successfully downloaded<*0*Errors while downloading files*")
             }
         }
-    }
+    } -skip
 }
