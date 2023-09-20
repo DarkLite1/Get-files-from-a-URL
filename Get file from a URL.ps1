@@ -605,6 +605,8 @@ End {
             #endregion
         }
 
+        $htmlTableTasks = $htmlTableTasks -join '<br>'
+
         #region Send summary mail to user
 
         #region Mail subject and priority
