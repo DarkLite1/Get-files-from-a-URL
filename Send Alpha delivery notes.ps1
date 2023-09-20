@@ -4,11 +4,19 @@
 
 <#
     .SYNOPSIS
-        Download all files defined in an Excel sheet.
+        Download files from a URL.
         
     .DESCRIPTION
-        Each Excel file contains a URL and a FileName field so the script knows
-        where to download the files and how to name the files.
+        A folder is scanned for Excel files. Each Excel file contains a 
+        worksheet with the column Url, where to download the file from, and the
+        column FileName, how to name the downloaded file.
+
+        Upon execution of this script a sub folder is created in the folder 
+        where the Excel files are stored. This sub folder will contain the 
+        downloaded files, an error report if required and a zip file that 
+        contains all the downloaded files when all downloads were successful.
+
+        A summary mail is sent to the user with an overview of all Excel files.
         
     .PARAMETER ImportFile
         Contains all the parameters for the script
@@ -18,9 +26,9 @@
 
     .PARAMETER DropFolder
         The folder where the Excel files are located. Each Excel file contains 
-        a sheet with the delivery notes to download.
+        a sheet with a row for each file to download.
 
-        Mandatory fields in the Excel sheet are:
+        Mandatory columns in the Excel sheet are:
         - FileName
         - URL
 
