@@ -419,7 +419,7 @@ Process {
                     ($task.Job.Result.where({ $_.DownloadedOn }).count)
                 ) {
                     try {
-                        $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder 'Result.zip'
+                        $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder "Result - $($task.ExcelFile.Item.BaseName).zip"
     
                         $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.OutputFile.ZipFile)'"
                         Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
