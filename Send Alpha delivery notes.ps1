@@ -182,6 +182,7 @@ Process {
                 LiteralPath = $file.FullName
                 Destination = '{0}\Original input file - {1}' -f 
                 $excelFileOutputFolder, $file.Name
+                ErrorAction = 'Stop'
             }
 
             Write-Verbose "Move original Excel file '$($moveParams.LiteralPath)' to output folder '$($moveParams.Destination)'"
@@ -404,6 +405,38 @@ Process {
                     $Source = $downloadFolder
                     $Target = $task.OutputFile.ZipFile
                     Start-SevenZip a -mx=9 $Target $Source    
+                }
+                else {
+                    $M = 'Not all files downloaded, no zip file created'
+                    Write-Verbose $M; Write-EventLog @EventWarnParams -Message $M
+
+                    #region Create Error.html file                    
+                    "
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                    .myDiv {
+                    border: 5px outset red;
+                    background-color: lightblue;    
+                    text-align: center;
+                    }
+                    </style>
+                    </head>
+                    <body>
+
+                    <h1>Error detected in the Excel sheet</h1>
+
+                    <div class=`"myDiv`">
+                    <h2>No zip-file created because not all files could be downloaded.</h2>
+                    </div>
+
+                    <p>Please check the Excel file for more information.</p>
+
+                    </body>
+                    </html>
+                    " | Out-File -LiteralPath "$($task.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
+                    #endregion
                 }
                 #endregion
             }

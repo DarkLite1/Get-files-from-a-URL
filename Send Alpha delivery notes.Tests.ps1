@@ -210,6 +210,12 @@ Describe 'when all tests pass' {
     It 'download the files' {
         Should -Invoke Wait-MaxRunningJobsHC -Times $testExcel.FileContent.Count -Exactly -Scope Describe
     }
+    It 'when not all files are downloaded Error.html is created in the output folder' {
+        $testErrorFile = Get-ChildItem -Path $testExcelFileOutputFolder.FullName -Filter 'Error.html' -Recurse
+
+        Get-Content -Path $testErrorFile.FullName -Raw | 
+        Should -BeLike "*No zip-file created because not all files could be downloaded*"
+    } -tag test
     Context 'export an Excel file to the output folder' {
         BeforeAll {
             $testExportedExcelRows = @(
@@ -251,6 +257,7 @@ Describe 'when all tests pass' {
             }
         }
     } #-Tag test
+    
     Context 'send an e-mail' {
         It 'with attachment to the user' {
             Should -Invoke Send-MailHC -Exactly 1 -Scope Describe -ParameterFilter {
@@ -262,5 +269,5 @@ Describe 'when all tests pass' {
             ($Message -like "*table*2*Files to download*2*Files successfully downloaded<*0*Errors while downloading files*")
             }
         }
-    } -skip
+    } -Skip
 }
