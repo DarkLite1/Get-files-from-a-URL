@@ -203,8 +203,8 @@ Describe 'when all tests pass' {
         "$($testExcelFileOutputFolder.FullName)\Original file - File.xlsx" | 
         Should -Exist
     }
-    It "create the folder 'PDF files' in output folder'" {
-        Join-Path $testExcelFileOutputFolder.FullName 'PDF Files' | 
+    It "create the folder 'Downloaded files' in output folder'" {
+        Join-Path $testExcelFileOutputFolder.FullName 'Downloaded files' | 
         Should -Exist
     }
     It 'download the files' {

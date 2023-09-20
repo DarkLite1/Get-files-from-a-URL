@@ -281,7 +281,7 @@ Process {
                 }
 
                 #region Create download folder
-                $downloadFolder = (New-Item -Path $task.ExcelFile.OutputFolder -Name 'PDF files' -ItemType 'Directory').FullName
+                $downloadFolder = (New-Item -Path $task.ExcelFile.OutputFolder -Name 'Downloaded files' -ItemType 'Directory').FullName
                 #endregion
 
                 #region Download files
