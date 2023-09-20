@@ -215,7 +215,7 @@ Describe 'when all tests pass' {
 
         Get-Content -Path $testErrorFile.FullName -Raw | 
         Should -BeLike "*No zip-file created because not all files could be downloaded*"
-    } -tag test
+    }
     Context 'export an Excel file to the output folder' {
         BeforeAll {
             $testExportedExcelRows = @(
@@ -256,18 +256,16 @@ Describe 'when all tests pass' {
                 $actualRow.Error | Should -BeLike $testRow.Error
             }
         }
-    } #-Tag test
-    
+    }
     Context 'send an e-mail' {
-        It 'with attachment to the user' {
+        It 'to the user with a summary of all Excel files' {
             Should -Invoke Send-MailHC -Exactly 1 -Scope Describe -ParameterFilter {
             ($To -eq $testInputFile.MailTo) -and
             ($Bcc -eq $testParams.ScriptAdmin) -and
-            ($Priority -eq 'Normal') -and
-            ($Subject -eq '2/2 files downloaded') -and
-            ($Attachments -like '*- Log.xlsx') -and
-            ($Message -like "*table*2*Files to download*2*Files successfully downloaded<*0*Errors while downloading files*")
+            ($Priority -eq 'High') -and
+            ($Subject -eq '0/2 files downloaded, 2 errors') -and
+            ($Message -like "*table*2*Files to download*0*Files successfully downloaded<*2*Files failed to download*")
             }
         }
-    } -Skip
+    }
 }

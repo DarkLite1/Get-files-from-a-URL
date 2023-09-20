@@ -93,7 +93,7 @@ Begin {
 
         #region Import .json file
         $M = "Import .json file '$ImportFile'"
-        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+        Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
         $file = Get-Content $ImportFile -Raw -EA Stop -Encoding UTF8 | 
         ConvertFrom-Json
@@ -135,11 +135,9 @@ Begin {
 
         if (-not $dropFolderExcelFiles) {
             $M = "No Excel files found in drop folder '$DropFolder'"
-            Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+            Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
-            Write-EventLog @EventEndParams
-
-            Exit
+            Write-EventLog @EventEndParams; Exit
         }
         #endregion
     }
@@ -230,7 +228,7 @@ Process {
                     #region Import Excel file
                     try {
                         $M = "Import Excel file '$($task.ExcelFile.Item.FullName)'"
-                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                        Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
             
                         $params = @{
                             Path          = $moveParams.Destination
@@ -243,7 +241,7 @@ Process {
             
                         $M = "Imported {0} rows from Excel file '{1}'" -f
                         $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
-                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                        Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
                     }
                     catch {
                         $error.RemoveAt(0)
@@ -310,7 +308,7 @@ Process {
 
                 #region Download files
                 $M = "Download $($task.ExcelFile.Content.count) files to '$downloadFolder'"
-                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
                 foreach ($row in $task.ExcelFile.Content) {
                     Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
@@ -383,7 +381,7 @@ Process {
 
                 #region Wait for jobs to finish
                 $M = "Wait for all $($task.Job.Started.count) jobs to finish"
-                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
      
                 $null = $task.Job.Started | Wait-Job
                 #endregion
@@ -496,6 +494,14 @@ Process {
 
 End {
     try {
+        if ($tasks.Count -eq 0) {
+            Write-Verbose "No tasks found, exit script"
+            Write-EventLog @EventEndParams; Exit
+        }
+
+        # $M = "Wait for all $($task.Job.Started.count) jobs to finish"
+        # Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
+
         $mailParams = @{ }
         $htmlTableTasks = @()
 
@@ -540,7 +546,7 @@ End {
             $totalCounter.All.DownloadedFiles += $counter.DownloadedFiles
             $totalCounter.All.Errors += (
                 $counter.Errors.InExcelFile + 
-                $counter.Errors.DownloadedFiles +
+                $counter.Errors.DownloadingFiles +
                 $counter.Errors.Other
             )
             #endregion
@@ -569,24 +575,29 @@ End {
                     if ($counter.Errors.InExcelFile) {
                         "<tr>
                             <td style=``"background-color: red``">$($counter.Errors.InExcelFile)</td>
-                            <td style=``"background-color: red``">Error(0) in the Excel file</td>
-                        </tr>" -f (if ($counter.Errors.InExcelFile -ne 1) {'s'})
+                            <td style=``"background-color: red``">Error{0} in the Excel file</td>
+                        </tr>" -f $(if ($counter.Errors.InExcelFile -ne 1) {'s'})
                     }
                 )
                 $(
-                    if ($counter.Errors.DownloadedFiles) {
+                    if ($counter.Errors.DownloadingFiles) {
                         "<tr>
-                            <td style=``"background-color: red``">$($counter.Errors.DownloadedFiles)</td>
-                            <td style=``"background-color: red``">File(0) failed to download</td>
-                        </tr>" -f (if ($counter.Errors.DownloadedFiles -ne 1) {'s'})
+                            <td style=``"background-color: red``">$($counter.Errors.DownloadingFiles)</td>
+                            <td style=``"background-color: red``">File{0} failed to download</td>
+                        </tr>" -f $(if ($counter.Errors.DownloadingFiles -ne 1) {'s'})
                     }
                 )
                 $(
                     if ($counter.Errors.Other) {
                         "<tr>
                             <td style=``"background-color: red``">$($counter.Errors.Other)</td>
-                            <td style=``"background-color: red``">Error(0) found</td>
-                        </tr>" -f (if ($counter.Errors.Other -ne 1) {'s'})
+                            <td style=``"background-color: red``">Error{0} found:<br>{1}</td>
+                        </tr>" -f $(
+                            if ($counter.Errors.Other -ne 1) {'s'}
+                        ),
+                        (
+                            '- ' + $($task.Error -join '<br> - ')
+                        )
                     }
                 )
             </table>
@@ -599,16 +610,16 @@ End {
         #region Mail subject and priority
         $mailParams.Priority = 'Normal'
         $mailParams.Subject = '{0}/{1} file{2} downloaded' -f 
-        $counter.DownloadedFiles,
-        $counter.RowsInExcel,
+        $totalCounter.All.DownloadedFiles,
+        $totalCounter.All.RowsInExcel,
         $(
-            if ($counter.RowsInExcel -ne 1) {
+            if ($totalCounter.All.RowsInExcel -ne 1) {
                 's'
             }
         )
 
         if (
-            $totalErrorCount = $counter.DownloadErrors + $counter.SystemErrors
+            $totalErrorCount = $totalCounter.All.Errors
         ) {
             $mailParams.Priority = 'High'
             $mailParams.Subject += ", $totalErrorCount error{0}" -f $(
@@ -618,10 +629,10 @@ End {
         #endregion
 
         #region Create error html lists
-        $SystemErrorsHtmlList = if ($counter.SystemErrors) {
-            "<p>Detected <b>{0} non terminating error{1}</b>:{2}</p>" -f $counter.SystemErrors, 
+        $systemErrorsHtmlList = if ($totalCounter.SystemErrors) {
+            "<p>Detected <b>{0} system error{1}</b>:{2}</p>" -f $totalCounter.SystemErrors, 
             $(
-                if ($counter.SystemErrors -ne 1) { 's' }
+                if ($totalCounter.SystemErrors -ne 1) { 's' }
             ),
             $(
                 $Error.Exception.Message | Where-Object { $_ } | 
@@ -634,31 +645,12 @@ End {
             To        = $MailTo
             Bcc       = $ScriptAdmin
             Message   = "
-                $htmlStyle
-                $SystemErrorsHtmlList
+                $systemErrorsHtmlList
                 <p>Summary:</p>
-                <table>
-                    <tr>
-                        <td>$($counter.RowsInExcel)</td>
-                        <td>Files to download</td>
-                    </tr>
-                    <tr>
-                        <td>$($counter.DownloadedFiles)</td>
-                        <td>Files successfully downloaded</td>
-                    </tr>
-                    <tr>
-                        <td>$($counter.DownloadErrors)</td>
-                        <td>Errors while downloading files</td>
-                    </tr>
-                </table>"
+                $htmlTableTasks"
             LogFolder = $LogParams.LogFolder
             Header    = $ScriptName
             Save      = $LogFile + ' - Mail.html'
-        }
-
-        if ($mailParams.Attachments) {
-            $mailParams.Message += 
-            "<p><i>* Check the attachment for details</i></p>"
         }
    
         Get-ScriptRuntimeHC -Stop
