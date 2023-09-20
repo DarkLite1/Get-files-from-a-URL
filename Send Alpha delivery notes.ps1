@@ -177,19 +177,6 @@ Process {
             }
             #endregion
 
-            #region Move original Excel file to output folder
-            $moveParams = @{
-                LiteralPath = $file.FullName
-                Destination = '{0}\Original input file - {1}' -f 
-                $excelFileOutputFolder, $file.Name
-                ErrorAction = 'Stop'
-            }
-
-            Write-Verbose "Move original Excel file '$($moveParams.LiteralPath)' to output folder '$($moveParams.Destination)'"
-
-            Move-Item @moveParams
-            #endregion
-
             try {
                 $task = [PSCustomObject]@{
                     Job        = @{
@@ -210,6 +197,26 @@ Process {
                 }
 
                 try {
+                    #region Move original Excel file to output folder
+                    try {
+                        $moveParams = @{
+                            LiteralPath = $file.FullName
+                            Destination = '{0}\Original input file - {1}' -f 
+                            $excelFileOutputFolder, $file.Name
+                            ErrorAction = 'Stop'
+                        }
+
+                        Write-Verbose "Move original Excel file '$($moveParams.LiteralPath)' to output folder '$($moveParams.Destination)'"
+
+                        Move-Item @moveParams
+                    }
+                    catch {
+                        $M = $_
+                        $error.RemoveAt(0)
+                        throw "Failed moving the file '$($file.FullName)' to folder '$excelFileOutputFolder': $M"
+                    }
+                    #endregion
+            
                     #region Import Excel file
                     try {
                         $M = "Import Excel file '$($task.ExcelFile.Item.FullName)'"
@@ -441,6 +448,9 @@ Process {
                 #endregion
             }
             catch {
+                $M = "Failed: $_"
+                Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
+                    
                 $task.Error = $_
                 $error.RemoveAt(0)
             }
@@ -461,7 +471,7 @@ End {
     try {
         $mailParams = @{ }
 
-        #region Send mail to user
+        #region Send summary mail to user
 
         #region Error counters
         $counter = @{
