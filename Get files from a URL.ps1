@@ -497,6 +497,7 @@ Process {
 End {
     try {
         $mailParams = @{ }
+        $htmlTableTasks = @()
 
         #region Count totals
         $totalCounter = @{
@@ -513,8 +514,7 @@ End {
         $totalCounter.All.Errors += $totalCounter.SystemErrors
         #endregion
 
-        #region Create HTML table
-        $htmlTableTasks = foreach ($task in $tasks) {
+        foreach ($task in $tasks) {
             #region Count task results
             $counter = @{
                 RowsInExcel     = (
@@ -535,7 +535,7 @@ End {
                     ).Count
                 }
             }
-
+            
             $totalCounter.All.RowsInExcel += $counter.RowsInExcel
             $totalCounter.All.DownloadedFiles += $counter.DownloadedFiles
             $totalCounter.All.Errors += (
@@ -544,9 +544,10 @@ End {
                 $counter.Errors.Other
             )
             #endregion
-
-            "
-            <table>
+                
+            #region Create HTML table
+            $htmlTableTasks += "
+                <table>
                 <tr>
                     <th colspan=`"2`">$($task.ExcelFile.Item.Name)</th>
                 </tr>
@@ -557,25 +558,43 @@ End {
                     </td>
                 </tr>
                 <tr>
-                    <td>$($task.ExcelFile.Content | Measure-Object)</td>
+                    <td>$($counter.RowsInExcel)</td>
                     <td>Files to download</td>
                 </tr>
                 <tr>
-                    <td>$($task.ExcelFile.Content.Count)</td>
+                    <td>$($counter.DownloadedFiles)</td>
                     <td>Files successfully downloaded</td>
                 </tr>
-                <tr>
-                    <td>$($counter.DownloadErrors)</td>
-                    <td>Errors while downloading files</td>
-                </tr>
+                $(
+                    if ($counter.Errors.InExcelFile) {
+                        "<tr>
+                            <td style=``"background-color: red``">$($counter.Errors.InExcelFile)</td>
+                            <td style=``"background-color: red``">Error(0) in the Excel file</td>
+                        </tr>" -f (if ($counter.Errors.InExcelFile -ne 1) {'s'})
+                    }
+                )
+                $(
+                    if ($counter.Errors.DownloadedFiles) {
+                        "<tr>
+                            <td style=``"background-color: red``">$($counter.Errors.DownloadedFiles)</td>
+                            <td style=``"background-color: red``">File(0) failed to download</td>
+                        </tr>" -f (if ($counter.Errors.DownloadedFiles -ne 1) {'s'})
+                    }
+                )
+                $(
+                    if ($counter.Errors.Other) {
+                        "<tr>
+                            <td style=``"background-color: red``">$($counter.Errors.Other)</td>
+                            <td style=``"background-color: red``">Error(0) found</td>
+                        </tr>" -f (if ($counter.Errors.Other -ne 1) {'s'})
+                    }
+                )
             </table>
             "
+            #endregion
         }
-        #endregion
 
         #region Send summary mail to user
-
-
 
         #region Mail subject and priority
         $mailParams.Priority = 'Normal'
