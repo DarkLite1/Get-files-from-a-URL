@@ -420,14 +420,25 @@ Process {
                     ($task.Job.Result.Count) -eq 
                     ($task.Job.Result.where({ $_.DownloadedOn }).count)
                 ) {
-                    $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder 'Result.zip'
+                    try {
+                        $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder 'Result.zip'
+    
+                        $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.OutputFile.ZipFile)'"
+                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+    
+                        $Source = $downloadFolder
+                        $Target = $task.OutputFile.ZipFile
+                        Start-SevenZip a -mx=9 $Target $Source
 
-                    $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.OutputFile.ZipFile)'"
-                    Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-
-                    $Source = $downloadFolder
-                    $Target = $task.OutputFile.ZipFile
-                    Start-SevenZip a -mx=9 $Target $Source    
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "7 zip failed with last exit code: $LASTEXITCODE"
+                        }
+                    }
+                    catch {
+                        $M = $_
+                        $Error.RemoveAt(0)
+                        throw "Failed creating zip file: $M"
+                    }
                 }
                 else {
                     $M = 'Not all files downloaded, no zip file created'
@@ -464,7 +475,7 @@ Process {
                 #endregion
             }
             catch {
-                $M = "Failed: $_"
+                $M = $_
                 Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
                     
                 $task.Error = $_
@@ -487,24 +498,84 @@ End {
     try {
         $mailParams = @{ }
 
-        #region Send summary mail to user
-
-        #region Error counters
-        $counter = @{
-            RowsInExcel     = (
-                $task.ExcelFile.Content | Measure-Object
-            ).Count
-            DownloadedFiles = (
-                $jobResults.Where({ $_.DownloadedOn }) | Measure-Object
-            ).Count
-            DownloadErrors  = (
-                $jobResults.Where({ $_.Error }) | Measure-Object
-            ).Count
-            SystemErrors    = (
+        #region Count totals
+        $totalCounter = @{
+            All          = @{
+                Errors          = 0
+                RowsInExcel     = 0
+                DownloadedFiles = 0
+            }
+            SystemErrors = (
                 $Error.Exception.Message | Measure-Object
             ).Count
         }
+            
+        $totalCounter.All.Errors += $totalCounter.SystemErrors
         #endregion
+
+        #region Create HTML table
+        $htmlTableTasks = foreach ($task in $tasks) {
+            #region Count task results
+            $counter = @{
+                RowsInExcel     = (
+                    $task.ExcelFile.Content | Measure-Object
+                ).Count
+                DownloadedFiles = (
+                    $task.Job.Result.Where({ $_.DownloadedOn }) | Measure-Object
+                ).Count
+                Errors          = @{
+                    InExcelFile      = (
+                        $task.ExcelFile.Error | Measure-Object
+                    ).Count
+                    DownloadingFiles = (
+                        $task.Job.Result.Where({ $_.Error }) | Measure-Object
+                    ).Count
+                    Other            = (
+                        $task.Error | Measure-Object
+                    ).Count
+                }
+            }
+
+            $totalCounter.All.RowsInExcel += $counter.RowsInExcel
+            $totalCounter.All.DownloadedFiles += $counter.DownloadedFiles
+            $totalCounter.All.Errors += (
+                $counter.Errors.InExcelFile + 
+                $counter.Errors.DownloadedFiles +
+                $counter.Errors.Other
+            )
+            #endregion
+
+            "
+            <table>
+                <tr>
+                    <th colspan=`"2`">$($task.ExcelFile.Item.Name)</th>
+                </tr>
+                <tr>
+                    <td>Details</td>
+                    <td>
+                        <a href=`"$($task.ExcelFile.OutputFolder)`">Output folder</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>$($task.ExcelFile.Content | Measure-Object)</td>
+                    <td>Files to download</td>
+                </tr>
+                <tr>
+                    <td>$($task.ExcelFile.Content.Count)</td>
+                    <td>Files successfully downloaded</td>
+                </tr>
+                <tr>
+                    <td>$($counter.DownloadErrors)</td>
+                    <td>Errors while downloading files</td>
+                </tr>
+            </table>
+            "
+        }
+        #endregion
+
+        #region Send summary mail to user
+
+
 
         #region Mail subject and priority
         $mailParams.Priority = 'Normal'
@@ -544,6 +615,7 @@ End {
             To        = $MailTo
             Bcc       = $ScriptAdmin
             Message   = "
+                $htmlStyle
                 $SystemErrorsHtmlList
                 <p>Summary:</p>
                 <table>
