@@ -154,29 +154,6 @@ Process {
         $tasks = @()
 
         foreach ($file in $dropFolderExcelFiles) {
-            #region Test if file is still there
-            if (-not (Test-Path -LiteralPath $file.FullName -PathType Leaf)) {
-                $M = "Excel file '$($file.FullName)' removed in the meantime"
-                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-                
-                Continue
-            }
-            #endregion
-
-            #region Create Excel specific output folder
-            try {
-                $excelFileOutputFolder = '{0}\{1} {2}' -f 
-                $outputFolder, $startDate, $file.BaseName
-                
-                $null = New-Item -Path $excelFileOutputFolder -ItemType 'Directory' -Force -ErrorAction 'Stop'
-
-                Write-Verbose "Excel file output folder '$excelFileOutputFolder'"
-            }
-            Catch {
-                throw "Failed creating the Excel output folder '$excelFileOutputFolder': $_"
-            }
-            #endregion
-
             try {
                 $task = [PSCustomObject]@{
                     Job        = @{
@@ -186,7 +163,7 @@ Process {
                     ExcelFile  = @{
                         Item         = $file
                         Content      = @()
-                        OutputFolder = $excelFileOutputFolder
+                        OutputFolder = $null
                         Error        = $null
                     }
                     OutputFile = @{
@@ -196,13 +173,38 @@ Process {
                     Error      = $null
                 }
 
+                #region Test if file is still present
+
+                if (-not (Test-Path -LiteralPath $task.ExcelFile.Item.FullName -PathType 'Leaf')) {
+                    throw "Excel file '$($task.ExcelFile.Item.FullName)' was removed during execution"
+                }
+                #endregion
+
+                #region Create Excel specific output folder
+                try {
+                    $params = @{
+                        Path        = '{0}\{1} {2}' -f 
+                        $outputFolder, $startDate, $task.ExcelFile.Item.BaseName
+                        ItemType    = 'Directory' 
+                        Force       = $true
+                        ErrorAction = 'Stop'
+                    }
+                    $task.ExcelFile.OutputFolder = (New-Item @params).FullName
+
+                    Write-Verbose "Excel file output folder '$($task.ExcelFile.OutputFolder)'"
+                }
+                Catch {
+                    throw "Failed creating the Excel output folder '$($task.ExcelFile.OutputFolder)': $_"
+                }
+                #endregion
+
                 try {
                     #region Move original Excel file to output folder
                     try {
                         $moveParams = @{
-                            LiteralPath = $file.FullName
+                            LiteralPath = $task.ExcelFile.Item.FullName
                             Destination = '{0}\Original input file - {1}' -f 
-                            $excelFileOutputFolder, $file.Name
+                            $task.ExcelFile.OutputFolder, $task.ExcelFile.Item.Name
                             ErrorAction = 'Stop'
                         }
 
@@ -213,7 +215,7 @@ Process {
                     catch {
                         $M = $_
                         $error.RemoveAt(0)
-                        throw "Failed moving the file '$($file.FullName)' to folder '$excelFileOutputFolder': $M"
+                        throw "Failed moving the file '$($task.ExcelFile.Item.FullName)' to folder '$($task.ExcelFile.OutputFolder)': $M"
                     }
                     #endregion
             
@@ -289,7 +291,13 @@ Process {
                 }
 
                 #region Create download folder
-                $downloadFolder = (New-Item -Path $task.ExcelFile.OutputFolder -Name 'Downloaded files' -ItemType 'Directory').FullName
+                $params = @{
+                    Path        = $task.ExcelFile.OutputFolder
+                    Name        = 'Downloaded files'
+                    ItemType    = 'Directory'
+                    ErrorAction = 'Stop'
+                }
+                $downloadFolder = (New-Item @params).FullName
                 #endregion
 
                 #region Download files
