@@ -170,6 +170,9 @@ Process {
                         OutputFolder = $null
                         Error        = $null
                     }
+                    FilePath = @{
+                        DownloadResults = $null
+                    }
                     Tasks     = @()
                     Error     = $null
                 }
@@ -192,6 +195,8 @@ Process {
                     $inputFile.ExcelFile.OutputFolder = (New-Item @params).FullName
 
                     Write-Verbose "Excel file output folder '$($inputFile.ExcelFile.OutputFolder)'"
+
+                    $inputFile.FilePath.DownloadResults = Join-Path $inputFile.ExcelFile.OutputFolder 'Download results.xlsx'
                 }
                 Catch {
                     throw "Failed creating the Excel output folder '$($inputFile.ExcelFile.OutputFolder)': $_"
@@ -310,7 +315,6 @@ Process {
                                 Result = @()
                             }
                             FilePath        = @{
-                                DownloadResults = Join-Path $inputFile.ExcelFile.OutputFolder 'Download results.xlsx'
                                 ZipFile         = Join-Path $inputFile.ExcelFile.OutputFolder "$($collection.Name).zip"
                             }
                             Error           = $null
@@ -414,26 +418,6 @@ Process {
                         $task.Job.Result += $task.Job.Object | Receive-Job
                         #endregion
 
-                        #region Export results to Excel
-                        if ($task.Job.Result) {                  
-                            $excelParams = @{
-                                Path               = $task.FilePath.DownloadResults
-                                NoNumberConversion = '*'
-                                WorksheetName      = 'Overview'
-                                TableName          = 'Overview'
-                                AutoSize           = $true
-                                FreezeTopRow       = $true
-                            }
-
-                            $M = "Export $($task.Job.Result.count) rows to Excel file '$($excelParams.Path)'"
-                            Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-        
-                            $task.Job.Result | Select-Object -Property 'Url', 
-                            'FileName', 'Destination', 'DownloadedOn' , 'Error' |
-                            Export-Excel @excelParams
-                        }
-                        #endregion
-
                         #region Create zip file
                         if (
                         ($task.ItemsToDownload.Count) -eq 
@@ -503,6 +487,27 @@ Process {
                         $inputFile.Tasks += $task   
                     }
                 }
+
+                #region Export results to Excel
+                if ($inputFile.Tasks.Job.Result) {
+                    $excelParams = @{
+                        Path               = $inputFile.FilePath.DownloadResults
+                        NoNumberConversion = '*'
+                        WorksheetName      = 'Overview'
+                        TableName          = 'Overview'
+                        AutoSize           = $true
+                        FreezeTopRow       = $true
+                    }
+
+                    $M = "Export $($inputFile.Tasks.Job.Result.Count) rows to Excel file '$($excelParams.Path)'"
+                    Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+
+                    $inputFile.Tasks.Job.Result | 
+                    Select-Object -Property 'Url', 
+                    'FileName', 'Destination', 'DownloadedOn' , 'Error' |
+                    Export-Excel @excelParams
+                }
+                #endregion
             }
             catch {
                 $M = $_
