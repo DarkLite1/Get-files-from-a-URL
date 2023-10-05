@@ -8,13 +8,14 @@
         
     .DESCRIPTION
         A folder is scanned for Excel files. Each Excel file contains a 
-        worksheet with the column Url, where to download the file from, and the
-        column FileName, how to name the downloaded file.
+        worksheet with the column Url, where to download the file from, the
+        column FileName, how to name the downloaded file and the column
+        DownloadFolder, where the file will be downloaded.
 
-        Upon execution of this script a sub folder is created in the folder 
-        where the Excel files are stored. This sub folder will contain the 
-        downloaded files, an error report if required and a zip file that 
-        contains all the downloaded files when all downloads were successful.
+        Upon execution of this script a download folder is created in the 
+        folder where the Excel files are stored. This download folder will 
+        contain the downloaded files. For each download folder there will be 
+        a zip file.
 
         A summary mail is sent to the user with an overview of all Excel files.
         
@@ -29,8 +30,9 @@
         a sheet with a row for each file to download.
 
         Mandatory columns in the Excel sheet are:
-        - FileName
         - URL
+        - FileName
+        - DownloadFolder
 
     .PARAMETER ExcelFileWorksheetName
         The name of the Excel worksheet where the download details are stored
@@ -237,7 +239,8 @@ Process {
                             DataOnly      = $true
                         }
                         $task.ExcelFile.Content += Import-Excel @params |
-                        Select-Object -Property 'Url', 'FileName'
+                        Select-Object -Property 'Url', 'FileName', 
+                        'DownloadFolder'
             
                         $M = "Imported {0} rows from Excel file '{1}'" -f
                         $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
@@ -256,6 +259,9 @@ Process {
                         }
                         if (-not ($row.URL)) {
                             throw "Property 'URL' not found"
+                        }
+                        if (-not ($row.DownloadFolder)) {
+                            throw "Property 'DownloadFolder' not found"
                         }
                     }
                     #endregion
@@ -296,89 +302,95 @@ Process {
                     Continue
                 }
 
-                #region Create download folder
-                $params = @{
-                    Path        = $task.ExcelFile.OutputFolder
-                    Name        = 'Downloaded files'
-                    ItemType    = 'Directory'
-                    ErrorAction = 'Stop'
-                }
-                $downloadFolder = (New-Item @params).FullName
-                #endregion
+                foreach (
+                    $collection in
+                    ($task.ExcelFile.Content | 
+                    Group-Object -Property 'DownloadFolder')
+                ) {
+                    #region Create download folder
+                    $params = @{
+                        Path        = $task.ExcelFile.OutputFolder
+                        Name        = $collection.Name
+                        ItemType    = 'Directory'
+                        ErrorAction = 'Stop'
+                    }
+                    $downloadFolder = (New-Item @params).FullName
+                    #endregion
 
-                #region Download files
-                $M = "Download $($task.ExcelFile.Content.count) files to '$downloadFolder'"
-                Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
+                    #region Download files
+                    $M = "Download $($task.ExcelFile.Content.count) files to '$downloadFolder'"
+                    Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
-                foreach ($row in $task.ExcelFile.Content) {
-                    Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
+                    foreach ($row in $collection.Group) {
+                        Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
                 
-                    $task.Job.Started += Start-Job -ScriptBlock {
-                        Param (
-                            [Parameter(Mandatory)]
-                            [String]$Url,
-                            [Parameter(Mandatory)]
-                            [String]$DownloadFolder,
-                            [Parameter(Mandatory)]
-                            [String]$FileName
-                        )
+                        $task.Job.Started += Start-Job -ScriptBlock {
+                            Param (
+                                [Parameter(Mandatory)]
+                                [String]$Url,
+                                [Parameter(Mandatory)]
+                                [String]$DownloadFolder,
+                                [Parameter(Mandatory)]
+                                [String]$FileName
+                            )
                             
-                        try {
-                            $result = [PSCustomObject]@{
-                                Url          = $Url
-                                FileName     = $FileName
-                                Destination  = $null
-                                DownloadedOn = $null
-                                Error        = $null
-                            }
+                            try {
+                                $result = [PSCustomObject]@{
+                                    Url          = $Url
+                                    FileName     = $FileName
+                                    Destination  = $null
+                                    DownloadedOn = $null
+                                    Error        = $null
+                                }
 
-                            $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
+                                $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
 
-                            $invokeParams = @{
-                                Uri         = $result.Url 
-                                OutFile     = $result.Destination 
-                                TimeoutSec  = 10 
-                                ErrorAction = 'Stop'
-                            }
-                            Invoke-WebRequest @invokeParams
+                                $invokeParams = @{
+                                    Uri         = $result.Url 
+                                    OutFile     = $result.Destination 
+                                    TimeoutSec  = 10 
+                                    ErrorAction = 'Stop'
+                                }
+                                Invoke-WebRequest @invokeParams
                         
-                            $result.DownloadedOn = Get-Date   
-                        }
-                        catch {
-                            $statusCode = $_.Exception.Response.StatusCode.value__
+                                $result.DownloadedOn = Get-Date   
+                            }
+                            catch {
+                                $statusCode = $_.Exception.Response.StatusCode.value__
 
-                            if ($statusCode) {
-                                $errorMessage = switch ($statusCode) {
-                                    '404' { 
-                                        'Status code: 404 Not found'; break
-                                    }
-                                    Default {
-                                        "Status code: $_"
+                                if ($statusCode) {
+                                    $errorMessage = switch ($statusCode) {
+                                        '404' { 
+                                            'Status code: 404 Not found'; break
+                                        }
+                                        Default {
+                                            "Status code: $_"
+                                        }
                                     }
                                 }
-                            }
-                            else {
-                                $errorMessage = $_
-                            }
+                                else {
+                                    $errorMessage = $_
+                                }
                     
-                            $result.Error = "Download failed: $errorMessage"
-                            $Error.RemoveAt(0)
-                        }
-                        finally {
-                            $result
-                        }
-                    } -ArgumentList $row.Url, $downloadFolder, $row.FileName
+                                $result.Error = "Download failed: $errorMessage"
+                                $Error.RemoveAt(0)
+                            }
+                            finally {
+                                $result
+                            }
+                        } -ArgumentList $row.Url, $downloadFolder, $row.FileName
 
-                    #region Wait for max running jobs
-                    $waitParams = @{
-                        Name       = $task.Job.Started | Where-Object { $_ }
-                        MaxThreads = $MaxConcurrentJobs
+                        #region Wait for max running jobs
+                        $waitParams = @{
+                            Name       = $task.Job.Started | Where-Object { $_ }
+                            MaxThreads = $MaxConcurrentJobs
+                        }
+                        Wait-MaxRunningJobsHC @waitParams
+                        #endregion
                     }
-                    Wait-MaxRunningJobsHC @waitParams
                     #endregion
                 }
-                #endregion
-
+                
                 #region Wait for jobs to finish
                 $M = "Wait for all $($task.Job.Started.count) jobs to finish"
                 Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
