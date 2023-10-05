@@ -526,7 +526,7 @@ Process {
 
 End {
     try {
-        if ($inputFiles.Count -eq 0) {
+        if (-not $inputFiles) {
             Write-Verbose "No tasks found, exit script"
             Write-EventLog @EventEndParams; Exit
         }
@@ -559,14 +559,17 @@ End {
                     $inputFile.ExcelFile.Content | Measure-Object
                 ).Count
                 DownloadedFiles = (
-                    $inputFile.Job.Result.Where({ $_.DownloadedOn }) | Measure-Object
+                    $inputFile.Tasks.Job.Result.Where({ $_.DownloadedOn }) | Measure-Object
                 ).Count
                 Errors          = @{
                     InExcelFile      = (
                         $inputFile.ExcelFile.Error | Measure-Object
                     ).Count
+                    InTasks          = (
+                        $inputFile.Tasks.Where({ $_.Error }) | Measure-Object
+                    ).Count
                     DownloadingFiles = (
-                        $inputFile.Job.Result.Where({ $_.Error }) | Measure-Object
+                        $inputFile.Tasks.Job.Result.Where({ $_.Error }) | Measure-Object
                     ).Count
                     Other            = (
                         $inputFile.Error | Measure-Object
@@ -578,6 +581,7 @@ End {
             $totalCounter.All.DownloadedFiles += $counter.DownloadedFiles
             $totalCounter.All.Errors += (
                 $counter.Errors.InExcelFile + 
+                $counter.Errors.InTasks + 
                 $counter.Errors.DownloadingFiles +
                 $counter.Errors.Other
             )
@@ -629,6 +633,48 @@ End {
                         ),
                         (
                             '- ' + $($inputFile.Error -join '<br> - ')
+                        )
+                    }
+                )
+                $(
+                    if($inputFile.Tasks) {
+                        "<tr>
+                            <th colspan=``"2``">Downloads per folder</th>
+                        </tr>"
+                    }
+                )
+                $(
+                    foreach ($task in $inputFile.Tasks) {
+                        $errorCount = $task.Job.Result.Where(
+                            {$_.Error}).Count
+
+                        $template = if ($errorCount) {
+                            "<tr>
+                            <td style=``"background-color: red``">{0}/{1}</td>
+                            <td style=``"background-color: red``">{2}{3}</td>
+                            </tr>"     
+                        } else {
+                            "<tr>
+                                <td>{0}/{1}</td>
+                                <td>{2}{3}</td>
+                            </tr>" 
+                        }
+
+                        $template -f 
+                        $(
+                            $task.Job.Result.Where({$_.DownloadedOn}).Count
+                        ),
+                        $(
+                            ($task.ItemsToDownload | Measure-Object).Count
+                        ),
+                        $(
+                            $task.DownloadFolder.Name
+                        ),
+                        $(
+                            if ($errorCount) {
+                                ' ({0} error{1})' -f 
+                                $errorCount, $(if ($errorCount -ne 1) {'s'})
+                            }
                         )
                     }
                 )
