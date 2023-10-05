@@ -159,31 +159,24 @@ Process {
         $null = New-Item -Path $outputFolder -ItemType Directory -EA Ignore
         #endregion
 
-        $tasks = @()
+        $inputFiles = @()
 
         foreach ($file in $dropFolderExcelFiles) {
             try {
-                $task = [PSCustomObject]@{
-                    Job        = @{
-                        Object = @()
-                        Result  = @()
-                    }
-                    ExcelFile  = @{
+                $inputFile = [PSCustomObject]@{
+                    ExcelFile = @{
                         Item         = $file
                         Content      = @()
                         OutputFolder = $null
                         Error        = $null
                     }
-                    OutputFile = @{
-                        DownloadResults = $null
-                        ZipFile         = $null
-                    }
-                    Error      = $null
+                    Tasks     = @()
+                    Error     = $null
                 }
 
                 #region Test if file is still present
-                if (-not (Test-Path -LiteralPath $task.ExcelFile.Item.FullName -PathType 'Leaf')) {
-                    throw "Excel file '$($task.ExcelFile.Item.FullName)' was removed during execution"
+                if (-not (Test-Path -LiteralPath $inputFile.ExcelFile.Item.FullName -PathType 'Leaf')) {
+                    throw "Excel file '$($inputFile.ExcelFile.Item.FullName)' was removed during execution"
                 }
                 #endregion
 
@@ -191,17 +184,17 @@ Process {
                 try {
                     $params = @{
                         Path        = '{0}\{1} {2}' -f 
-                        $outputFolder, $startDate, $task.ExcelFile.Item.BaseName
+                        $outputFolder, $startDate, $inputFile.ExcelFile.Item.BaseName
                         ItemType    = 'Directory' 
                         Force       = $true
                         ErrorAction = 'Stop'
                     }
-                    $task.ExcelFile.OutputFolder = (New-Item @params).FullName
+                    $inputFile.ExcelFile.OutputFolder = (New-Item @params).FullName
 
-                    Write-Verbose "Excel file output folder '$($task.ExcelFile.OutputFolder)'"
+                    Write-Verbose "Excel file output folder '$($inputFile.ExcelFile.OutputFolder)'"
                 }
                 Catch {
-                    throw "Failed creating the Excel output folder '$($task.ExcelFile.OutputFolder)': $_"
+                    throw "Failed creating the Excel output folder '$($inputFile.ExcelFile.OutputFolder)': $_"
                 }
                 #endregion
 
@@ -209,9 +202,8 @@ Process {
                     #region Move original Excel file to output folder
                     try {
                         $moveParams = @{
-                            LiteralPath = $task.ExcelFile.Item.FullName
-                            Destination = '{0}\Original input file - {1}' -f 
-                            $task.ExcelFile.OutputFolder, $task.ExcelFile.Item.Name
+                            LiteralPath = $inputFile.ExcelFile.Item.FullName
+                            Destination = Join-Path $inputFile.ExcelFile.OutputFolder $inputFile.ExcelFile.Item.Name
                             ErrorAction = 'Stop'
                         }
 
@@ -222,13 +214,13 @@ Process {
                     catch {
                         $M = $_
                         $error.RemoveAt(0)
-                        throw "Failed moving the file '$($task.ExcelFile.Item.FullName)' to folder '$($task.ExcelFile.OutputFolder)': $M"
+                        throw "Failed moving the file '$($inputFile.ExcelFile.Item.FullName)' to folder '$($inputFile.ExcelFile.OutputFolder)': $M"
                     }
                     #endregion
             
                     #region Import Excel file
                     try {
-                        $M = "Import Excel file '$($task.ExcelFile.Item.FullName)'"
+                        $M = "Import Excel file '$($inputFile.ExcelFile.Item.FullName)'"
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
             
                         $params = @{
@@ -237,12 +229,12 @@ Process {
                             ErrorAction   = 'Stop'
                             DataOnly      = $true
                         }
-                        $task.ExcelFile.Content += Import-Excel @params |
+                        $inputFile.ExcelFile.Content += Import-Excel @params |
                         Select-Object -Property 'Url', 'FileName', 
                         'DownloadFolderName'
             
                         $M = "Imported {0} rows from Excel file '{1}'" -f
-                        $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
+                        $inputFile.ExcelFile.Content.count, $inputFile.ExcelFile.Item.FullName
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
                     }
                     catch {
@@ -252,7 +244,7 @@ Process {
                     #endregion
 
                     #region Test Excel file
-                    foreach ($row in $task.ExcelFile.Content) {
+                    foreach ($row in $inputFile.ExcelFile.Content) {
                         if (-not ($row.FileName)) {
                             throw "Property 'FileName' not found"
                         }
@@ -267,7 +259,7 @@ Process {
                 }
                 catch {
                     Write-Warning "Excel input file error: $_"
-                    $task.ExcelFile.Error = $_
+                    $inputFile.ExcelFile.Error = $_
     
                     #region Create Error.html file                    
                     "
@@ -294,7 +286,7 @@ Process {
 
                     </body>
                     </html>
-                    " | Out-File -LiteralPath "$($task.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
+                    " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
                     #endregion
                     
                     $error.RemoveAt(0)
@@ -303,158 +295,175 @@ Process {
 
                 foreach (
                     $collection in
-                    ($task.ExcelFile.Content | 
+                    ($inputFile.ExcelFile.Content | 
                     Group-Object -Property 'DownloadFolderName')
                 ) {
-                    #region Create download folder
-                    $params = @{
-                        Path        = $task.ExcelFile.OutputFolder
-                        Name        = $collection.Name
-                        ItemType    = 'Directory'
-                        ErrorAction = 'Stop'
-                    }
-                    $downloadFolder = (New-Item @params).FullName
-                    #endregion
-
-                    #region Download files
-                    $M = "Download $($task.ExcelFile.Content.count) files to '$downloadFolder'"
-                    Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
-
-                    foreach ($row in $collection.Group) {
-                        Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
-                
-                        $task.Job.Object += Start-Job -ScriptBlock {
-                            Param (
-                                [Parameter(Mandatory)]
-                                [String]$Url,
-                                [Parameter(Mandatory)]
-                                [String]$DownloadFolder,
-                                [Parameter(Mandatory)]
-                                [String]$FileName
-                            )
-                            
-                            try {
-                                $result = [PSCustomObject]@{
-                                    Url          = $Url
-                                    FileName     = $FileName
-                                    Destination  = $null
-                                    DownloadedOn = $null
-                                    Error        = $null
-                                }
-
-                                $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
-
-                                $invokeParams = @{
-                                    Uri         = $result.Url 
-                                    OutFile     = $result.Destination 
-                                    TimeoutSec  = 10 
-                                    ErrorAction = 'Stop'
-                                }
-                                Invoke-WebRequest @invokeParams
-                        
-                                $result.DownloadedOn = Get-Date   
+                    try {
+                        $task = [PSCustomObject]@{
+                            ItemsToDownload = $collection.Group
+                            DownloadFolder  = @{
+                                Name = $collection.Name
+                                Item = $null
                             }
-                            catch {
-                                $statusCode = $_.Exception.Response.StatusCode.value__
+                            Job             = @{
+                                Object = @()
+                                Result = @()
+                            }
+                            FilePath        = @{
+                                DownloadResults = Join-Path $inputFile.ExcelFile.OutputFolder 'Download results.xlsx'
+                                ZipFile         = Join-Path $inputFile.ExcelFile.OutputFolder "$($collection.Name).zip"
+                            }
+                            Error           = $null
+                        }
 
-                                if ($statusCode) {
-                                    $errorMessage = switch ($statusCode) {
-                                        '404' { 
-                                            'Status code: 404 Not found'; break
-                                        }
-                                        Default {
-                                            "Status code: $_"
+                        #region Create download folder
+                        try {
+                            $params = @{
+                                Path        = Join-Path $inputFile.ExcelFile.OutputFolder $task.DownloadFolder.Name
+                                ItemType    = 'Directory'
+                                ErrorAction = 'Stop'
+                            }
+                            $task.DownloadFolder.Item = New-Item @params
+                        }
+                        catch {
+                            throw "Failed creating download folder '$($params.Path)': $_"
+                        }
+                        #endregion
+
+                        #region Download files
+                        $M = "Download $($task.ItemsToDownload.count) files to '$($task.DownloadFolder.Item.FullName)'"
+                        Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
+
+                        foreach ($row in $task.ItemsToDownload) {
+                            Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
+                
+                            $task.Job.Object += Start-Job -ScriptBlock {
+                                Param (
+                                    [Parameter(Mandatory)]
+                                    [String]$Url,
+                                    [Parameter(Mandatory)]
+                                    [String]$DownloadFolder,
+                                    [Parameter(Mandatory)]
+                                    [String]$FileName
+                                )
+                            
+                                try {
+                                    $result = [PSCustomObject]@{
+                                        Url          = $Url
+                                        FileName     = $FileName
+                                        Destination  = $null
+                                        DownloadedOn = $null
+                                        Error        = $null
+                                    }
+
+                                    $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
+
+                                    $invokeParams = @{
+                                        Uri         = $result.Url 
+                                        OutFile     = $result.Destination 
+                                        TimeoutSec  = 10 
+                                        ErrorAction = 'Stop'
+                                    }
+                                    Invoke-WebRequest @invokeParams
+                        
+                                    $result.DownloadedOn = Get-Date   
+                                }
+                                catch {
+                                    $statusCode = $_.Exception.Response.StatusCode.value__
+
+                                    if ($statusCode) {
+                                        $errorMessage = switch ($statusCode) {
+                                            '404' { 
+                                                'Status code: 404 Not found'; break
+                                            }
+                                            Default {
+                                                "Status code: $_"
+                                            }
                                         }
                                     }
-                                }
-                                else {
-                                    $errorMessage = $_
-                                }
+                                    else {
+                                        $errorMessage = $_
+                                    }
                     
-                                $result.Error = "Download failed: $errorMessage"
-                                $Error.RemoveAt(0)
-                            }
-                            finally {
-                                $result
-                            }
-                        } -ArgumentList $row.Url, $downloadFolder, $row.FileName
+                                    $result.Error = "Download failed: $errorMessage"
+                                    $Error.RemoveAt(0)
+                                }
+                                finally {
+                                    $result
+                                }
+                            } -ArgumentList $row.Url, $task.DownloadFolder.Item.FullName, $row.FileName
 
-                        #region Wait for max running jobs
-                        $waitParams = @{
-                            Name       = $task.Job.Object | Where-Object { $_ }
-                            MaxThreads = $MaxConcurrentJobs
+                            #region Wait for max running jobs
+                            $waitParams = @{
+                                Name       = $task.Job.Object | Where-Object { $_ }
+                                MaxThreads = $MaxConcurrentJobs
+                            }
+                            Wait-MaxRunningJobsHC @waitParams
+                            #endregion
                         }
-                        Wait-MaxRunningJobsHC @waitParams
                         #endregion
-                    }
-                    #endregion
-                }
-                
-                #region Wait for jobs to finish
-                $M = "Wait for all $($task.Job.Object.count) jobs to finish"
-                Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
+
+                        #region Wait for jobs to finish
+                        $M = "Wait for all $($task.Job.Object.count) jobs to finish"
+                        Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
      
-                $null = $task.Job.Object | Wait-Job
-                #endregion
+                        $null = $task.Job.Object | Wait-Job
+                        #endregion
      
-                #region Get job results and job errors   
-                $task.Job.Result += $task.Job.Object | Receive-Job
-                #endregion
+                        #region Get job results and job errors   
+                        $task.Job.Result += $task.Job.Object | Receive-Job
+                        #endregion
 
-                #region Export results to Excel
-                if ($task.Job.Result) {                  
-                    $task.OutputFile.DownloadResults = Join-Path $task.ExcelFile.OutputFolder 'Download results.xlsx'
+                        #region Export results to Excel
+                        if ($task.Job.Result) {                  
+                            $excelParams = @{
+                                Path               = $task.FilePath.DownloadResults
+                                NoNumberConversion = '*'
+                                WorksheetName      = 'Overview'
+                                TableName          = 'Overview'
+                                AutoSize           = $true
+                                FreezeTopRow       = $true
+                            }
 
-                    $excelParams = @{
-                        Path               = $task.OutputFile.DownloadResults
-                        NoNumberConversion = '*'
-                        WorksheetName      = 'Overview'
-                        TableName          = 'Overview'
-                        AutoSize           = $true
-                        FreezeTopRow       = $true
-                    }
-
-                    $M = "Export $($task.Job.Result.count) rows to Excel file '$($excelParams.Path)'"
-                    Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+                            $M = "Export $($task.Job.Result.count) rows to Excel file '$($excelParams.Path)'"
+                            Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
         
-                    $task.Job.Result | Select-Object -Property 'Url', 
-                    'FileName', 'Destination', 'DownloadedOn' , 'Error' |
-                    Export-Excel @excelParams
-                }
-                #endregion
-
-                #region Create zip file
-                if (
-                    ($task.ExcelFile.Content.Count) -eq 
-                    ($task.Job.Result.Count) -eq 
-                    ($task.Job.Result.where({ $_.DownloadedOn }).count)
-                ) {
-                    try {
-                        $task.OutputFile.ZipFile = Join-Path $task.ExcelFile.OutputFolder "Result - $($task.ExcelFile.Item.BaseName).zip"
-    
-                        $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.OutputFile.ZipFile)'"
-                        Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-    
-                        $Source = $downloadFolder
-                        $Target = $task.OutputFile.ZipFile
-                        Start-SevenZip a -mx=9 $Target $Source
-
-                        if ($LASTEXITCODE -ne 0) {
-                            throw "7 zip failed with last exit code: $LASTEXITCODE"
+                            $task.Job.Result | Select-Object -Property 'Url', 
+                            'FileName', 'Destination', 'DownloadedOn' , 'Error' |
+                            Export-Excel @excelParams
                         }
-                    }
-                    catch {
-                        $M = $_
-                        $Error.RemoveAt(0)
-                        throw "Failed creating zip file: $M"
-                    }
-                }
-                else {
-                    $M = 'Not all files downloaded, no zip file created'
-                    Write-Verbose $M; Write-EventLog @EventWarnParams -Message $M
+                        #endregion
 
-                    #region Create Error.html file                    
-                    "
+                        #region Create zip file
+                        if (
+                        ($task.ItemsToDownload.Count) -eq 
+                        ($task.Job.Result.Count) -eq 
+                        ($task.Job.Result.where({ $_.DownloadedOn }).count)
+                        ) {
+                            try {
+                                $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.FilePath.ZipFile)'"
+                                Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
+    
+                                $Source = $task.DownloadFolder.Item.FullName
+                                $Target = $task.FilePath.ZipFile
+                                Start-SevenZip a -mx=9 $Target $Source
+
+                                if ($LASTEXITCODE -ne 0) {
+                                    throw "7 zip failed with last exit code: $LASTEXITCODE"
+                                }
+                            }
+                            catch {
+                                $M = $_
+                                $Error.RemoveAt(0)
+                                throw "Failed creating zip file: $M"
+                            }
+                        }
+                        else {
+                            $M = 'Not all files downloaded, no zip file created'
+                            Write-Verbose $M; Write-EventLog @EventWarnParams -Message $M
+
+                            #region Create Error.html file                    
+                            "
                     <!DOCTYPE html>
                     <html>
                     <head>
@@ -478,20 +487,32 @@ Process {
 
                     </body>
                     </html>
-                    " | Out-File -LiteralPath "$($task.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
-                    #endregion
+                    " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
+                            #endregion
+                        }
+                        #endregion   
+                    }
+                    catch {
+                        $M = $_
+                        Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
+
+                        $task.Error = $_
+                        $error.RemoveAt(0)
+                    }
+                    finally {
+                        $inputFile.Tasks += $task   
+                    }
                 }
-                #endregion
             }
             catch {
                 $M = $_
                 Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
                     
-                $task.Error = $_
+                $inputFile.Error = $_
                 $error.RemoveAt(0)
             }
             finally {
-                $tasks += $task
+                $inputFiles += $inputFile
             }
         }
     }
@@ -505,12 +526,12 @@ Process {
 
 End {
     try {
-        if ($tasks.Count -eq 0) {
+        if ($inputFiles.Count -eq 0) {
             Write-Verbose "No tasks found, exit script"
             Write-EventLog @EventEndParams; Exit
         }
 
-        # $M = "Wait for all $($task.Job.Object.count) jobs to finish"
+        # $M = "Wait for all $($inputFile.Job.Object.count) jobs to finish"
         # Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
         $mailParams = @{ }
@@ -531,24 +552,24 @@ End {
         $totalCounter.All.Errors += $totalCounter.SystemErrors
         #endregion
 
-        foreach ($task in $tasks) {
+        foreach ($inputFile in $inputFiles) {
             #region Count task results
             $counter = @{
                 RowsInExcel     = (
-                    $task.ExcelFile.Content | Measure-Object
+                    $inputFile.ExcelFile.Content | Measure-Object
                 ).Count
                 DownloadedFiles = (
-                    $task.Job.Result.Where({ $_.DownloadedOn }) | Measure-Object
+                    $inputFile.Job.Result.Where({ $_.DownloadedOn }) | Measure-Object
                 ).Count
                 Errors          = @{
                     InExcelFile      = (
-                        $task.ExcelFile.Error | Measure-Object
+                        $inputFile.ExcelFile.Error | Measure-Object
                     ).Count
                     DownloadingFiles = (
-                        $task.Job.Result.Where({ $_.Error }) | Measure-Object
+                        $inputFile.Job.Result.Where({ $_.Error }) | Measure-Object
                     ).Count
                     Other            = (
-                        $task.Error | Measure-Object
+                        $inputFile.Error | Measure-Object
                     ).Count
                 }
             }
@@ -566,12 +587,12 @@ End {
             $htmlTableTasks += "
                 <table>
                 <tr>
-                    <th colspan=`"2`">$($task.ExcelFile.Item.Name)</th>
+                    <th colspan=`"2`">$($inputFile.ExcelFile.Item.Name)</th>
                 </tr>
                 <tr>
                     <td>Details</td>
                     <td>
-                        <a href=`"$($task.ExcelFile.OutputFolder)`">Output folder</a>
+                        <a href=`"$($inputFile.ExcelFile.OutputFolder)`">Output folder</a>
                     </td>
                 </tr>
                 <tr>
@@ -607,7 +628,7 @@ End {
                             if ($counter.Errors.Other -ne 1) {'s'}
                         ),
                         (
-                            '- ' + $($task.Error -join '<br> - ')
+                            '- ' + $($inputFile.Error -join '<br> - ')
                         )
                     }
                 )

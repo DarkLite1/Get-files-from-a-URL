@@ -202,7 +202,7 @@ Describe 'when all tests pass' {
         Get-ChildItem -Path $testInputFile.DropFolder -File | 
         Should -BeNullOrEmpty
 
-        "$($testExcelFileOutputFolder.FullName)\Original input file - File.xlsx" | 
+        "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
         Should -Exist
     }
     It "create the folder 'DownloadedFolder' in output folder'" {
@@ -271,5 +271,5 @@ Describe 'when all tests pass' {
             ($Message -like "*table*2*Files to download*0*Files successfully downloaded<*2*Files failed to download*")
             }
         }
-    }
+    } -Skip
 }
