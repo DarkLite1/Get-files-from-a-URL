@@ -17,14 +17,14 @@ BeforeAll {
         FilePath    = Join-Path $testInputFile.DropFolder 'File.xlsx'
         FileContent = @(
             [PSCustomObject]@{
-                Url            = 'http://something/1'
-                FileName       = 'File1.pdf'
-                DownloadFolder = 'Supplier A'
+                Url                = 'http://something/1'
+                FileName           = 'File1.pdf'
+                DownloadFolderName = 'Supplier A'
             }
             [PSCustomObject]@{
-                Url            = 'http://something/2'
-                FileName       = 'File2.pdf'
-                DownloadFolder = 'Supplier A'
+                Url                = 'http://something/2'
+                FileName           = 'File2.pdf'
+                DownloadFolderName = 'Supplier A'
             }
         )
     }
@@ -164,7 +164,7 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
         }
         Context 'is missing property' {
             It '<_>' -ForEach @(
-                'FileName', 'URL', 'DownloadFolder'
+                'FileName', 'URL', 'DownloadFolderName'
             ) {
                 $testNewExcel = Copy-ObjectHC $testExcel
 
@@ -206,7 +206,7 @@ Describe 'when all tests pass' {
         Should -Exist
     }
     It "create the folder 'DownloadedFolder' in output folder'" {
-        $testExcel.FileContent.DownloadedFolder | ForEach-Object {
+        $testExcel.FileContent.DownloadedFolderName | ForEach-Object {
             Join-Path $testExcelFileOutputFolder.FullName $_ | 
             Should -Exist
         }

@@ -10,7 +10,7 @@
         A folder is scanned for Excel files. Each Excel file contains a 
         worksheet with the column Url, where to download the file from, the
         column FileName, how to name the downloaded file and the column
-        DownloadFolder, where the file will be downloaded.
+        DownloadFolderName, where the file will be downloaded.
 
         Upon execution of this script a download folder is created in the 
         folder where the Excel files are stored. This download folder will 
@@ -32,7 +32,7 @@
         Mandatory columns in the Excel sheet are:
         - URL
         - FileName
-        - DownloadFolder
+        - DownloadFolderName
 
     .PARAMETER ExcelFileWorksheetName
         The name of the Excel worksheet where the download details are stored
@@ -240,7 +240,7 @@ Process {
                         }
                         $task.ExcelFile.Content += Import-Excel @params |
                         Select-Object -Property 'Url', 'FileName', 
-                        'DownloadFolder'
+                        'DownloadFolderName'
             
                         $M = "Imported {0} rows from Excel file '{1}'" -f
                         $task.ExcelFile.Content.count, $task.ExcelFile.Item.FullName
@@ -260,8 +260,8 @@ Process {
                         if (-not ($row.URL)) {
                             throw "Property 'URL' not found"
                         }
-                        if (-not ($row.DownloadFolder)) {
-                            throw "Property 'DownloadFolder' not found"
+                        if (-not ($row.DownloadFolderName)) {
+                            throw "Property 'DownloadFolderName' not found"
                         }
                     }
                     #endregion
@@ -305,7 +305,7 @@ Process {
                 foreach (
                     $collection in
                     ($task.ExcelFile.Content | 
-                    Group-Object -Property 'DownloadFolder')
+                    Group-Object -Property 'DownloadFolderName')
                 ) {
                     #region Create download folder
                     $params = @{
