@@ -165,7 +165,7 @@ Process {
             try {
                 $task = [PSCustomObject]@{
                     Job        = @{
-                        Started = @()
+                        Object = @()
                         Result  = @()
                     }
                     ExcelFile  = @{
@@ -182,7 +182,6 @@ Process {
                 }
 
                 #region Test if file is still present
-
                 if (-not (Test-Path -LiteralPath $task.ExcelFile.Item.FullName -PathType 'Leaf')) {
                     throw "Excel file '$($task.ExcelFile.Item.FullName)' was removed during execution"
                 }
@@ -324,7 +323,7 @@ Process {
                     foreach ($row in $collection.Group) {
                         Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
                 
-                        $task.Job.Started += Start-Job -ScriptBlock {
+                        $task.Job.Object += Start-Job -ScriptBlock {
                             Param (
                                 [Parameter(Mandatory)]
                                 [String]$Url,
@@ -382,7 +381,7 @@ Process {
 
                         #region Wait for max running jobs
                         $waitParams = @{
-                            Name       = $task.Job.Started | Where-Object { $_ }
+                            Name       = $task.Job.Object | Where-Object { $_ }
                             MaxThreads = $MaxConcurrentJobs
                         }
                         Wait-MaxRunningJobsHC @waitParams
@@ -392,14 +391,14 @@ Process {
                 }
                 
                 #region Wait for jobs to finish
-                $M = "Wait for all $($task.Job.Started.count) jobs to finish"
+                $M = "Wait for all $($task.Job.Object.count) jobs to finish"
                 Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
      
-                $null = $task.Job.Started | Wait-Job
+                $null = $task.Job.Object | Wait-Job
                 #endregion
      
                 #region Get job results and job errors   
-                $task.Job.Result += $task.Job.Started | Receive-Job
+                $task.Job.Result += $task.Job.Object | Receive-Job
                 #endregion
 
                 #region Export results to Excel
@@ -511,7 +510,7 @@ End {
             Write-EventLog @EventEndParams; Exit
         }
 
-        # $M = "Wait for all $($task.Job.Started.count) jobs to finish"
+        # $M = "Wait for all $($task.Job.Object.count) jobs to finish"
         # Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
         $mailParams = @{ }
