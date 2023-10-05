@@ -170,7 +170,7 @@ Process {
                         OutputFolder = $null
                         Error        = $null
                     }
-                    FilePath = @{
+                    FilePath  = @{
                         DownloadResults = $null
                     }
                     Tasks     = @()
@@ -315,7 +315,7 @@ Process {
                                 Result = @()
                             }
                             FilePath        = @{
-                                ZipFile         = Join-Path $inputFile.ExcelFile.OutputFolder "$($collection.Name).zip"
+                                ZipFile = Join-Path $inputFile.ExcelFile.OutputFolder "$($collection.Name).zip"
                             }
                             Error           = $null
                         }
@@ -420,9 +420,8 @@ Process {
 
                         #region Create zip file
                         if (
-                        ($task.ItemsToDownload.Count) -eq 
-                        ($task.Job.Result.Count) -eq 
-                        ($task.Job.Result.where({ $_.DownloadedOn }).count)
+                            ($task.ItemsToDownload.Count) -eq 
+                            ($task.Job.Result.where({ $_.DownloadedOn }).count)
                         ) {
                             try {
                                 $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.FilePath.ZipFile)'"
@@ -649,7 +648,13 @@ End {
                     }
                 )
                 $(
-                    foreach ($task in $inputFile.Tasks) {
+                    foreach (
+                        $task in 
+                        (
+                            $inputFile.Tasks | 
+                            Sort-Object {$_.DownloadFolder.Name}
+                        )
+                    ) {
                         $errorCount = $task.Job.Result.Where(
                             {$_.Error}).Count
 
