@@ -463,6 +463,7 @@ Process {
                     <h1>Error detected in the Excel sheet</h1>
 
                     <div class=`"myDiv`">
+                    <h1>$($task.DownloadFolder.Name)</h1>
                     <h2>No zip-file created because not all files could be downloaded.</h2>
                     </div>
 
@@ -470,7 +471,7 @@ Process {
 
                     </body>
                     </html>
-                    " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
+                    " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error - $($task.DownloadFolder.Name).html" -Encoding utf8
                             #endregion
                         }
                         #endregion   

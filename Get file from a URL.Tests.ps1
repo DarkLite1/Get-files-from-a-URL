@@ -215,10 +215,10 @@ Describe 'when all tests pass' {
         Should -Invoke Wait-MaxRunningJobsHC -Times $testExcel.FileContent.Count -Exactly -Scope Describe
     }
     It 'when not all files are downloaded Error.html is created in the output folder' {
-        $testErrorFile = Get-ChildItem -Path $testExcelFileOutputFolder.FullName -Filter 'Error.html' -Recurse
+        $testErrorFile = Get-ChildItem -Path $testExcelFileOutputFolder.FullName -Filter 'Error - *.html' -Recurse
 
         Get-Content -Path $testErrorFile.FullName -Raw | 
-        Should -BeLike "*No zip-file created because not all files could be downloaded*"
+        Should -BeLike "*No zip-file created*"
     }
     Context 'export an Excel file to the output folder' {
         BeforeAll {
