@@ -346,7 +346,7 @@ Process {
                         foreach ($row in $task.ItemsToDownload) {
                             $progressCount.Current++
                         
-                            $M = "Download {0}/(1) file name '$($row.FileName)' from '$($row.Url)'" -f $progressCount.Current, $progressCount.Total
+                            $M = "Download {0}/{1} file name '$($row.FileName)' from '$($row.Url)'" -f $progressCount.Current, $progressCount.Total
                             Write-Verbose $M
                 
                             $task.Job.Object += Start-Job -ScriptBlock {
