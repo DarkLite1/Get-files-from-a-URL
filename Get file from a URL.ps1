@@ -298,6 +298,11 @@ Process {
                     Continue
                 }
 
+                $progressCount = @{
+                    Current = 0
+                    Total   = $inputFile.ExcelFile.Content.count
+                }
+
                 foreach (
                     $collection in
                     ($inputFile.ExcelFile.Content | 
@@ -339,7 +344,10 @@ Process {
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
                         foreach ($row in $task.ItemsToDownload) {
-                            Write-Verbose "Download file '$($row.FileName)' from '$($row.Url)'"
+                            $progressCount.Current++
+                        
+                            $M = "Download {0}/(1) file name '$($row.FileName)' from '$($row.Url)'" -f $progressCount.Current, $progressCount.Total
+                            Write-Verbose $M
                 
                             $task.Job.Object += Start-Job -ScriptBlock {
                                 Param (
@@ -368,7 +376,7 @@ Process {
                                         TimeoutSec  = 10 
                                         ErrorAction = 'Stop'
                                     }
-                                    Invoke-WebRequest @invokeParams
+                                    $null = Invoke-WebRequest @invokeParams
                         
                                     $result.DownloadedOn = Get-Date   
                                 }
