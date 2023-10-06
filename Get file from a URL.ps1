@@ -460,14 +460,14 @@ Process {
                     </head>
                     <body>
 
-                    <h1>Error detected in the Excel sheet</h1>
+                    <h1>Error detected while downloading files</h1>
 
                     <div class=`"myDiv`">
-                    <h1>$($task.DownloadFolder.Name)</h1>
+                    <h1>DownloadFolderName '$($task.DownloadFolder.Name)'</h1>
                     <h2>No zip-file created because not all files could be downloaded.</h2>
                     </div>
 
-                    <p>Please check the Excel file for more information.</p>
+                    <p>Please check the Excel file '$($inputFile.FilePath.DownloadResults)' for more information.</p>
 
                     </body>
                     </html>
