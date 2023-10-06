@@ -475,6 +475,14 @@ Process {
                     <h2>No zip-file created because not all files could be downloaded.</h2>
                     </div>
 
+                    <h1>Detected errors:</h>
+                    <ul>
+                        $($task.Job.Result.where({ $_.Error }).foreach(
+                            { '<li>{0} - {1}</li>' -f $_.FileName, $_.Error }
+                            )
+                        )
+                    </ul>
+
                     <p>Please check the Excel file '$($inputFile.FilePath.DownloadResults)' for more information.</p>
 
                     </body>
