@@ -308,14 +308,14 @@ Process {
                             ItemsToDownload = $collection.Group
                             DownloadFolder  = @{
                                 Name = $collection.Name
-                                Item = $null
+                                Path = Join-Path $inputFile.ExcelFile.OutputFolder "Downloads\Files\$($collection.Name)" 
                             }
                             Job             = @{
                                 Object = @()
                                 Result = @()
                             }
                             FilePath        = @{
-                                ZipFile = Join-Path $inputFile.ExcelFile.OutputFolder "$($collection.Name).zip"
+                                ZipFile = Join-Path $inputFile.ExcelFile.OutputFolder "Downloads\Zip files\$($collection.Name).zip"
                             }
                             Error           = $null
                         }
@@ -323,7 +323,7 @@ Process {
                         #region Create download folder
                         try {
                             $params = @{
-                                Path        = Join-Path $inputFile.ExcelFile.OutputFolder $task.DownloadFolder.Name
+                                Path        = $task.DownloadFolder.Path
                                 ItemType    = 'Directory'
                                 ErrorAction = 'Stop'
                             }
@@ -335,7 +335,7 @@ Process {
                         #endregion
 
                         #region Download files
-                        $M = "Download $($task.ItemsToDownload.count) files to '$($task.DownloadFolder.Item.FullName)'"
+                        $M = "Download $($task.ItemsToDownload.count) files to '$($task.DownloadFolder.Path)'"
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
                         foreach ($row in $task.ItemsToDownload) {
@@ -395,7 +395,7 @@ Process {
                                 finally {
                                     $result
                                 }
-                            } -ArgumentList $row.Url, $task.DownloadFolder.Item.FullName, $row.FileName
+                            } -ArgumentList $row.Url, $task.DownloadFolder.Path, $row.FileName
 
                             #region Wait for max running jobs
                             $waitParams = @{
@@ -427,7 +427,7 @@ Process {
                                 $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.FilePath.ZipFile)'"
                                 Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
     
-                                $Source = $task.DownloadFolder.Item.FullName
+                                $Source = $task.DownloadFolder.Path
                                 $Target = $task.FilePath.ZipFile
                                 Start-SevenZip a -mx=9 $Target $Source
 
