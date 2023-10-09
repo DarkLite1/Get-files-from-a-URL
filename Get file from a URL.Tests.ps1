@@ -205,7 +205,7 @@ Describe 'when all tests pass' {
         "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
         Should -Exist
     }
-    It "create the folder 'DownloadedFolder' in output folder'" {
+    It "create the folder 'DownloadedFolderName' in output folder'" {
         $testExcel.FileContent.DownloadedFolderName | ForEach-Object {
             Join-Path $testExcelFileOutputFolder.FullName $_ | 
             Should -Exist
