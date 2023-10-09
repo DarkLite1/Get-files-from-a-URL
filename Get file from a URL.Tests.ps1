@@ -13,20 +13,29 @@ BeforeAll {
         MaxConcurrentJobs      = 5
     }
 
+    $testData = @(
+        [PSCustomObject]@{
+            Url                = 'http://something/1'
+            FileName           = 'File1.pdf'
+            FilePath           = '*\{0}\{1}' -f 'Supplier A', 'File1.pdf'
+            DownloadFolderName = 'Supplier A'
+            DownloadedOn       = $null
+            Error              = 'Download failed:*'
+        }
+        [PSCustomObject]@{
+            Url                = 'http://something/2'
+            FileName           = 'File2.pdf'
+            FilePath           = '*\{0}\{1}' -f 'Supplier A', 'File2.pdf'
+            DownloadFolderName = 'Supplier A'
+            DownloadedOn       = $null
+            Error              = 'Download failed:*'
+        }
+    )
+
     $testExcel = @{
         FilePath    = Join-Path $testInputFile.DropFolder 'File.xlsx'
-        FileContent = @(
-            [PSCustomObject]@{
-                Url                = 'http://something/1'
-                FileName           = 'File1.pdf'
-                DownloadFolderName = 'Supplier A'
-            }
-            [PSCustomObject]@{
-                Url                = 'http://something/2'
-                FileName           = 'File2.pdf'
-                DownloadFolderName = 'Supplier A'
-            }
-        )
+        FileContent = $testData | 
+        Select-Object 'Url', 'FileName', 'DownloadFolderName'
     }
 
     $testOutParams = @{
@@ -44,6 +53,24 @@ BeforeAll {
 
     Mock Send-MailHC
     Mock Write-EventLog
+    Mock Start-Job {
+        & $realCmdLet.StartJob -Scriptblock { 
+            $using:testData[0]
+        }
+    } -ParameterFilter {
+        ($ArgumentList[0] -eq $testData[0].Url) -and
+        ($ArgumentList[0] -eq $testData[0].DownloadFolderName) -and
+        ($ArgumentList[0] -eq $testData[0].FileName) 
+    }
+    Mock Start-Job {
+        & $realCmdLet.StartJob -Scriptblock { 
+            $using:testData[1]
+        }
+    } -ParameterFilter {
+        ($ArgumentList[0] -eq $testData[1].Url) -and
+        ($ArgumentList[0] -eq $testData[1].DownloadFolderName) -and
+        ($ArgumentList[0] -eq $testData[1].FileName) 
+    }
 }
 Describe 'the mandatory parameters are' {
     It '<_>' -ForEach @('ImportFile', 'ScriptName') {
@@ -222,22 +249,7 @@ Describe 'when all tests pass' {
     }
     Context 'export an Excel file to the output folder' {
         BeforeAll {
-            $testExportedExcelRows = @(
-                [PSCustomObject]@{
-                    Url          = 'http://something/1'
-                    FileName     = 'File1.pdf'
-                    Destination  = '*File1.pdf'
-                    DownloadedOn = $null
-                    Error        = 'Download failed:*'
-                }
-                [PSCustomObject]@{
-                    Url          = 'http://something/2'
-                    FileName     = 'File2.pdf'
-                    Destination  = '*File2.pdf'
-                    DownloadedOn = $null
-                    Error        = 'Download failed:*'
-                }
-            )
+            $testExportedExcelRows = $testData
 
             $testExcelLogFile = Get-ChildItem $testExcelFileOutputFolder.FullName -Filter 'Download results.xlsx'
 
@@ -255,11 +267,13 @@ Describe 'when all tests pass' {
                     $_.Url -eq $testRow.Url
                 }
                 $actualRow.FileName | Should -Be $testRow.FileName
-                $actualRow.Destination | Should -BeLike $testRow.Destination
+                $actualRow.FilePath | Should -BeLike $testRow.FilePath
                 $actualRow.DownloadedOn | Should -Be $testRow.DownloadedOn
                 $actualRow.Error | Should -BeLike $testRow.Error
+                $actualRow.DownloadFolderName | 
+                Should -Be $testRow.DownloadFolderName
             }
-        }
+        }  -Tag test
     }
     Context 'send an e-mail' {
         It 'to the user with a summary of all Excel files' {

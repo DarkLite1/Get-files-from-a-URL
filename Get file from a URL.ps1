@@ -361,18 +361,19 @@ Process {
                             
                                 try {
                                     $result = [PSCustomObject]@{
-                                        Url          = $Url
-                                        FileName     = $FileName
-                                        Destination  = $null
-                                        DownloadedOn = $null
-                                        Error        = $null
+                                        Url                = $Url
+                                        FileName           = $FileName
+                                        FilePath           = $null
+                                        DownloadFolderName = Split-Path $DownloadFolder -Leaf
+                                        DownloadedOn       = $null
+                                        Error              = $null
                                     }
 
-                                    $result.Destination = Join-Path -Path $DownloadFolder -ChildPath $FileName
+                                    $result.FilePath = Join-Path -Path $DownloadFolder -ChildPath $FileName
 
                                     $invokeParams = @{
                                         Uri         = $result.Url 
-                                        OutFile     = $result.Destination 
+                                        OutFile     = $result.FilePath 
                                         TimeoutSec  = 10 
                                         ErrorAction = 'Stop'
                                     }
@@ -520,7 +521,8 @@ Process {
 
                     $inputFile.Tasks.Job.Result | 
                     Select-Object -Property 'Url', 
-                    'FileName', 'Destination', 'DownloadedOn' , 'Error' |
+                    'FileName', 'DownloadFolderName', 
+                    'DownloadedOn' , 'Error', 'FilePath' |
                     Export-Excel @excelParams
                 }
                 #endregion
