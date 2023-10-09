@@ -115,7 +115,10 @@ Begin {
             if (-not ($ExcelFileWorksheetName = $file.ExcelFileWorksheetName)) {
                 throw "Property 'ExcelFileWorksheetName' not found"
             }
-            if (-not ($file.MaxConcurrentJobs -is [int])) {
+            try {
+                $file.MaxConcurrentJobs = $file.MaxConcurrentJobs.ToInt16($null)
+            }
+            catch {
                 throw "Property 'MaxConcurrentJobs' needs to be a number, the value '$($file.MaxConcurrentJobs)' is not supported."
             }
             if (-not (Test-Path -LiteralPath $DropFolder -PathType Container)) {

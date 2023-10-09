@@ -166,7 +166,7 @@ Describe 'send an e-mail to the admin when' {
                 Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
                     $EntryType -eq 'Error'
                 }
-            }
+            } -tag test
         }
     }
 }
@@ -273,7 +273,7 @@ Describe 'when all tests pass' {
                 $actualRow.DownloadFolderName | 
                 Should -Be $testRow.DownloadFolderName
             }
-        }  -Tag test
+        }
     }
     Context 'send an e-mail' {
         It 'to the user with a summary of all Excel files' {
