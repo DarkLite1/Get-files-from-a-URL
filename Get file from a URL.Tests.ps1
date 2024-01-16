@@ -1,7 +1,7 @@
 #Requires -Modules Pester
 #Requires -Version 5.1
 
-BeforeAll {    
+BeforeAll {
     $realCmdLet = @{
         StartJob = Get-Command Start-Job
     }
@@ -34,7 +34,7 @@ BeforeAll {
 
     $testExcel = @{
         FilePath    = Join-Path $testInputFile.DropFolder 'File.xlsx'
-        FileContent = $testData | 
+        FileContent = $testData |
         Select-Object 'Url', 'FileName', 'DownloadFolderName'
     }
 
@@ -54,34 +54,34 @@ BeforeAll {
     Mock Send-MailHC
     Mock Write-EventLog
     Mock Start-Job {
-        & $realCmdLet.StartJob -Scriptblock { 
+        & $realCmdLet.StartJob -Scriptblock {
             $using:testData[0]
         }
     } -ParameterFilter {
         ($ArgumentList[0] -eq $testData[0].Url) -and
         ($ArgumentList[0] -eq $testData[0].DownloadFolderName) -and
-        ($ArgumentList[0] -eq $testData[0].FileName) 
+        ($ArgumentList[0] -eq $testData[0].FileName)
     }
     Mock Start-Job {
-        & $realCmdLet.StartJob -Scriptblock { 
+        & $realCmdLet.StartJob -Scriptblock {
             $using:testData[1]
         }
     } -ParameterFilter {
         ($ArgumentList[0] -eq $testData[1].Url) -and
         ($ArgumentList[0] -eq $testData[1].DownloadFolderName) -and
-        ($ArgumentList[0] -eq $testData[1].FileName) 
+        ($ArgumentList[0] -eq $testData[1].FileName)
     }
 }
 Describe 'the mandatory parameters are' {
     It '<_>' -ForEach @('ImportFile', 'ScriptName') {
-        (Get-Command $testScript).Parameters[$_].Attributes.Mandatory | 
+        (Get-Command $testScript).Parameters[$_].Attributes.Mandatory |
         Should -BeTrue
     }
 }
 Describe 'send an e-mail to the admin when' {
     BeforeAll {
         $MailAdminParams = {
-            ($To -eq $testParams.ScriptAdmin) -and ($Priority -eq 'High') -and 
+            ($To -eq $testParams.ScriptAdmin) -and ($Priority -eq 'High') -and
             ($Subject -eq 'FAILURE')
         }
     }
@@ -92,7 +92,7 @@ Describe 'send an e-mail to the admin when' {
         .$testScript @testNewParams
 
         Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-            (&$MailAdminParams) -and 
+            (&$MailAdminParams) -and
             ($Message -like '*Failed creating the log folder*')
         }
     }
@@ -100,9 +100,9 @@ Describe 'send an e-mail to the admin when' {
         It 'is not found' {
             $testNewParams = $testParams.clone()
             $testNewParams.ImportFile = 'nonExisting.json'
-    
+
             .$testScript @testNewParams
-    
+
             Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
                     (&$MailAdminParams) -and ($Message -like "Cannot find path*nonExisting.json*")
             }
@@ -114,19 +114,19 @@ Describe 'send an e-mail to the admin when' {
             It '<_> not found' -ForEach @(
                 'MailTo',
                 'MaxConcurrentJobs',
-                'DropFolder', 
+                'DropFolder',
                 'ExcelFileWorksheetName'
             ) {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
                 $testNewInputFile.$_ = $null
-    
-                $testNewInputFile | ConvertTo-Json -Depth 5 | 
+
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
-                    
+
                 .$testScript @testParams
-                    
+
                 Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-                        (&$MailAdminParams) -and 
+                        (&$MailAdminParams) -and
                         ($Message -like "*$ImportFile*Property '$_' not found*")
                 }
                 Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
@@ -136,12 +136,12 @@ Describe 'send an e-mail to the admin when' {
             It 'MaxConcurrentJobs is not a number' {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
                 $testNewInputFile.MaxConcurrentJobs = 'a'
-    
-                $testNewInputFile | ConvertTo-Json -Depth 5 | 
+
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
-                
+
                 .$testScript @testParams
-        
+
                 Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
                     (&$MailAdminParams) -and
                     ($Message -like "*$ImportFile*Property 'MaxConcurrentJobs' needs to be a number, the value 'a' is not supported*")
@@ -153,20 +153,20 @@ Describe 'send an e-mail to the admin when' {
             It 'DropFolder path not found' {
                 $testNewInputFile = Copy-ObjectHC $testInputFile
                 $testNewInputFile.DropFolder = 'TestDrive:/notFound'
-                
-                $testNewInputFile | ConvertTo-Json -Depth 5 | 
+
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
-                    
+
                 .$testScript @testParams
-                    
+
                 Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
-                        (&$MailAdminParams) -and 
+                        (&$MailAdminParams) -and
                         ($Message -like "*$ImportFile*Property 'DropFolder': Path 'TestDrive:/notFound' not found*")
                 }
                 Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
                     $EntryType -eq 'Error'
                 }
-            } -tag test
+            }
         }
     }
 }
@@ -174,19 +174,19 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
     BeforeEach {
         Remove-Item "$($testInputFile.DropFolder)\*" -Recurse -ErrorAction Ignore
 
-        $testInputFile | ConvertTo-Json -Depth 5 | 
+        $testInputFile | ConvertTo-Json -Depth 5 |
         Out-File @testOutParams
     }
     Context 'the Excel file' {
         It 'is missing the sheet defined in ExcelFileWorksheetName' {
-            $testExcel.FileContent | 
+            $testExcel.FileContent |
             Export-Excel -Path $testExcel.FilePath -WorksheetName 'wrong'
 
             .$testScript @testParams
-                
+
             $testErrorFile = Get-ChildItem -Path $testInputFile.DropFolder -Filter 'Error.html' -Recurse
 
-            Get-Content -Path $testErrorFile.FullName -Raw | 
+            Get-Content -Path $testErrorFile.FullName -Raw |
             Should -BeLike "*Worksheet '$($testInputFile.ExcelFileWorksheetName)' not found*"
         }
         Context 'is missing property' {
@@ -196,16 +196,16 @@ Describe 'an Error.html file is saved in the Excel file output folder when' {
                 $testNewExcel = Copy-ObjectHC $testExcel
 
                 $testNewExcel.FileContent[0].$_ = $null
-                
+
                 $testNewExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testInputFile.ExcelFileWorksheetName
 
                 .$testScript @testParams
 
                 $testErrorFile = Get-ChildItem -Path $testInputFile.DropFolder -Filter 'Error.html' -Recurse
 
-                Get-Content -Path $testErrorFile.FullName -Raw | 
+                Get-Content -Path $testErrorFile.FullName -Raw |
                 Should -BeLike "*Property '$_' not found*"
-            } 
+            } -Tag test
         }
     }
 }
@@ -213,7 +213,7 @@ Describe 'when all tests pass' {
     BeforeAll {
         Mock Wait-MaxRunningJobsHC
 
-        $testInputFile | ConvertTo-Json -Depth 5 | 
+        $testInputFile | ConvertTo-Json -Depth 5 |
         Out-File @testOutParams
 
         $testExcel.FileContent | Export-Excel -Path $testExcel.FilePath -WorksheetName $testInputFile.ExcelFileWorksheetName
@@ -226,15 +226,15 @@ Describe 'when all tests pass' {
         $testExcelFileOutputFolder.FullName | Should -Exist
     }
     It 'Move the original Excel file to the output folder' {
-        Get-ChildItem -Path $testInputFile.DropFolder -File | 
+        Get-ChildItem -Path $testInputFile.DropFolder -File |
         Should -BeNullOrEmpty
 
-        "$($testExcelFileOutputFolder.FullName)\File.xlsx" | 
+        "$($testExcelFileOutputFolder.FullName)\File.xlsx" |
         Should -Exist
     }
     It "create the folder 'DownloadedFolderName' in output folder'" {
         $testExcel.FileContent.DownloadedFolderName | ForEach-Object {
-            Join-Path $testExcelFileOutputFolder.FullName $_ | 
+            Join-Path $testExcelFileOutputFolder.FullName $_ |
             Should -Exist
         }
     }
@@ -244,7 +244,7 @@ Describe 'when all tests pass' {
     It 'when not all files are downloaded Error.html is created in the output folder' {
         $testErrorFile = Get-ChildItem -Path $testExcelFileOutputFolder.FullName -Filter 'Error - *.html' -Recurse
 
-        Get-Content -Path $testErrorFile.FullName -Raw | 
+        Get-Content -Path $testErrorFile.FullName -Raw |
         Should -BeLike "*No zip-file created*"
     }
     Context 'export an Excel file to the output folder' {
@@ -270,7 +270,7 @@ Describe 'when all tests pass' {
                 $actualRow.FilePath | Should -BeLike $testRow.FilePath
                 $actualRow.DownloadedOn | Should -Be $testRow.DownloadedOn
                 $actualRow.Error | Should -BeLike $testRow.Error
-                $actualRow.DownloadFolderName | 
+                $actualRow.DownloadFolderName |
                 Should -Be $testRow.DownloadFolderName
             }
         }
