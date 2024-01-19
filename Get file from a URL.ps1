@@ -5,20 +5,20 @@
 <#
     .SYNOPSIS
         Download files from a URL.
-        
+
     .DESCRIPTION
-        A folder is scanned for Excel files. Each Excel file contains a 
+        A folder is scanned for Excel files. Each Excel file contains a
         worksheet with the column Url, where to download the file from, the
         column FileName, how to name the downloaded file and the column
         DownloadFolderName, where the file will be downloaded.
 
-        Upon execution of this script a download folder is created in the 
-        folder where the Excel files are stored. This download folder will 
-        contain the downloaded files. For each download folder there will be 
+        Upon execution of this script a download folder is created in the
+        folder where the Excel files are stored. This download folder will
+        contain the downloaded files. For each download folder there will be
         a zip file.
 
         A summary mail is sent to the user with an overview of all Excel files.
-        
+
     .PARAMETER ImportFile
         Contains all the parameters for the script
 
@@ -26,7 +26,7 @@
         E-mail addresses of where to send the summary e-mail
 
     .PARAMETER DropFolder
-        The folder where the Excel files are located. Each Excel file contains 
+        The folder where the Excel files are located. Each Excel file contains
         a sheet with a row for each file to download.
 
         Mandatory columns in the Excel sheet are:
@@ -59,27 +59,27 @@ Begin {
         Import-EventLogParamsHC -Source $ScriptName
         Write-EventLog @EventStartParams
         $startDate = (Get-ScriptRuntimeHC -Start).ToString('yyyy-MM-dd HHmmss')
-        
+
         $Error.Clear()
 
         #region Test 7 zip installed
         $7zipPath = "$env:ProgramFiles\7-Zip\7z.exe"
-        
+
         if (-not (Test-Path -Path $7zipPath -PathType 'Leaf')) {
             throw "7 zip file '$7zipPath' not found"
         }
-        
+
         Set-Alias Start-SevenZip $7zipPath
         #endregion
 
         #region Logging
         try {
             $joinParams = @{
-                Path        = $LogFolder 
-                ChildPath   = $startDate 
+                Path        = $LogFolder
+                ChildPath   = $startDate
                 ErrorAction = 'Ignore'
             }
-            
+
             $logParams = @{
                 LogFolder    = New-Item -Path (Join-Path @joinParams) -ItemType 'Directory' -Force -ErrorAction 'Stop'
                 Name         = $ScriptName
@@ -97,7 +97,7 @@ Begin {
         $M = "Import .json file '$ImportFile'"
         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
-        $file = Get-Content $ImportFile -Raw -EA Stop -Encoding UTF8 | 
+        $file = Get-Content $ImportFile -Raw -EA Stop -Encoding UTF8 |
         ConvertFrom-Json
         #endregion
 
@@ -106,20 +106,22 @@ Begin {
             if (-not ($MailTo = $file.MailTo)) {
                 throw "Property 'MailTo' not found"
             }
+
             if (-not ($MaxConcurrentJobs = $file.MaxConcurrentJobs)) {
                 throw "Property 'MaxConcurrentJobs' not found"
             }
+            try {
+                $null = $MaxConcurrentJobs.ToInt16($null)
+            }
+            catch {
+                throw "Property 'MaxConcurrentJobs' needs to be a number, the value '$MaxConcurrentJobs' is not supported."
+            }
+
             if (-not ($DropFolder = $file.DropFolder)) {
                 throw "Property 'DropFolder' not found"
             }
             if (-not ($ExcelFileWorksheetName = $file.ExcelFileWorksheetName)) {
                 throw "Property 'ExcelFileWorksheetName' not found"
-            }
-            try {
-                $file.MaxConcurrentJobs = $file.MaxConcurrentJobs.ToInt16($null)
-            }
-            catch {
-                throw "Property 'MaxConcurrentJobs' needs to be a number, the value '$($file.MaxConcurrentJobs)' is not supported."
             }
             if (-not (Test-Path -LiteralPath $DropFolder -PathType Container)) {
                 throw "Property 'DropFolder': Path '$DropFolder' not found"
@@ -189,9 +191,9 @@ Process {
                 #region Create Excel specific output folder
                 try {
                     $params = @{
-                        Path        = '{0}\{1} {2}' -f 
+                        Path        = '{0}\{1} {2}' -f
                         $outputFolder, $startDate, $inputFile.ExcelFile.Item.BaseName
-                        ItemType    = 'Directory' 
+                        ItemType    = 'Directory'
                         Force       = $true
                         ErrorAction = 'Stop'
                     }
@@ -225,12 +227,12 @@ Process {
                         throw "Failed moving the file '$($inputFile.ExcelFile.Item.FullName)' to folder '$($inputFile.ExcelFile.OutputFolder)': $M"
                     }
                     #endregion
-            
+
                     #region Import Excel file
                     try {
                         $M = "Import Excel file '$($inputFile.ExcelFile.Item.FullName)'"
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
-            
+
                         $params = @{
                             Path          = $moveParams.Destination
                             WorksheetName = $ExcelFileWorksheetName
@@ -238,9 +240,9 @@ Process {
                             DataOnly      = $true
                         }
                         $inputFile.ExcelFile.Content += Import-Excel @params |
-                        Select-Object -Property 'Url', 'FileName', 
+                        Select-Object -Property 'Url', 'FileName',
                         'DownloadFolderName'
-            
+
                         $M = "Imported {0} rows from Excel file '{1}'" -f
                         $inputFile.ExcelFile.Content.count, $inputFile.ExcelFile.Item.FullName
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
@@ -268,8 +270,8 @@ Process {
                 catch {
                     Write-Warning "Excel input file error: $_"
                     $inputFile.ExcelFile.Error = $_
-    
-                    #region Create Error.html file                    
+
+                    #region Create Error.html file
                     "
                     <!DOCTYPE html>
                     <html>
@@ -277,7 +279,7 @@ Process {
                     <style>
                     .myDiv {
                     border: 5px outset red;
-                    background-color: lightblue;    
+                    background-color: lightblue;
                     text-align: center;
                     }
                     </style>
@@ -296,7 +298,7 @@ Process {
                     </html>
                     " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error.html" -Encoding utf8
                     #endregion
-                    
+
                     $error.RemoveAt(0)
                     Continue
                 }
@@ -308,7 +310,7 @@ Process {
 
                 foreach (
                     $collection in
-                    ($inputFile.ExcelFile.Content | 
+                    ($inputFile.ExcelFile.Content |
                     Group-Object -Property 'DownloadFolderName')
                 ) {
                     try {
@@ -316,7 +318,7 @@ Process {
                             ItemsToDownload = $collection.Group
                             DownloadFolder  = @{
                                 Name = $collection.Name
-                                Path = Join-Path $inputFile.ExcelFile.OutputFolder "Downloads\Files\$($collection.Name)" 
+                                Path = Join-Path $inputFile.ExcelFile.OutputFolder "Downloads\Files\$($collection.Name)"
                             }
                             Job             = @{
                                 Object = @()
@@ -348,10 +350,10 @@ Process {
 
                         foreach ($row in $task.ItemsToDownload) {
                             $progressCount.Current++
-                        
+
                             $M = "Download {0}/{1} file name '$($row.FileName)' from '$($row.Url)'" -f $progressCount.Current, $progressCount.Total
                             Write-Verbose $M
-                
+
                             $task.Job.Object += Start-Job -ScriptBlock {
                                 Param (
                                     [Parameter(Mandatory)]
@@ -361,7 +363,7 @@ Process {
                                     [Parameter(Mandatory)]
                                     [String]$FileName
                                 )
-                            
+
                                 try {
                                     $result = [PSCustomObject]@{
                                         Url                = $Url
@@ -375,21 +377,21 @@ Process {
                                     $result.FilePath = Join-Path -Path $DownloadFolder -ChildPath $FileName
 
                                     $invokeParams = @{
-                                        Uri         = $result.Url 
-                                        OutFile     = $result.FilePath 
-                                        TimeoutSec  = 10 
+                                        Uri         = $result.Url
+                                        OutFile     = $result.FilePath
+                                        TimeoutSec  = 10
                                         ErrorAction = 'Stop'
                                     }
                                     $null = Invoke-WebRequest @invokeParams
-                        
-                                    $result.DownloadedOn = Get-Date   
+
+                                    $result.DownloadedOn = Get-Date
                                 }
                                 catch {
                                     $statusCode = $_.Exception.Response.StatusCode.value__
 
                                     if ($statusCode) {
                                         $errorMessage = switch ($statusCode) {
-                                            '404' { 
+                                            '404' {
                                                 'Status code: 404 Not found'; break
                                             }
                                             Default {
@@ -400,7 +402,7 @@ Process {
                                     else {
                                         $errorMessage = $_
                                     }
-                    
+
                                     $result.Error = "Download failed: $errorMessage"
                                     $Error.RemoveAt(0)
                                 }
@@ -422,23 +424,23 @@ Process {
                         #region Wait for jobs to finish
                         $M = "Wait for all $($task.Job.Object.count) jobs to finish"
                         Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
-     
+
                         $null = $task.Job.Object | Wait-Job
                         #endregion
-     
-                        #region Get job results and job errors   
+
+                        #region Get job results and job errors
                         $task.Job.Result += $task.Job.Object | Receive-Job
                         #endregion
 
                         #region Create zip file
                         if (
-                            ($task.ItemsToDownload.Count) -eq 
+                            ($task.ItemsToDownload.Count) -eq
                             ($task.Job.Result.where({ $_.DownloadedOn }).count)
                         ) {
                             try {
                                 $M = "Create zip file with $($task.Job.Result.count) files in zip file '$($task.FilePath.ZipFile)'"
                                 Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
-    
+
                                 $Source = $task.DownloadFolder.Path
                                 $Target = $task.FilePath.ZipFile
                                 Start-SevenZip a -mx=9 $Target $Source
@@ -457,7 +459,7 @@ Process {
                             $M = 'Not all files downloaded, no zip file created'
                             Write-Verbose $M; Write-EventLog @EventWarnParams -Message $M
 
-                            #region Create Error.html file                    
+                            #region Create Error.html file
                             "
                     <!DOCTYPE html>
                     <html>
@@ -465,7 +467,7 @@ Process {
                     <style>
                     .myDiv {
                     border: 5px outset red;
-                    background-color: lightblue;    
+                    background-color: lightblue;
                     text-align: center;
                     }
                     </style>
@@ -494,7 +496,7 @@ Process {
                     " | Out-File -LiteralPath "$($inputFile.ExcelFile.OutputFolder)\Error - $($task.DownloadFolder.Name).html" -Encoding utf8
                             #endregion
                         }
-                        #endregion   
+                        #endregion
                     }
                     catch {
                         $M = $_
@@ -504,7 +506,7 @@ Process {
                         $error.RemoveAt(0)
                     }
                     finally {
-                        $inputFile.Tasks += $task   
+                        $inputFile.Tasks += $task
                     }
                 }
 
@@ -522,9 +524,9 @@ Process {
                     $M = "Export $($inputFile.Tasks.Job.Result.Count) rows to Excel file '$($excelParams.Path)'"
                     Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
 
-                    $inputFile.Tasks.Job.Result | 
-                    Select-Object -Property 'Url', 
-                    'FileName', 'DownloadFolderName', 
+                    $inputFile.Tasks.Job.Result |
+                    Select-Object -Property 'Url',
+                    'FileName', 'DownloadFolderName',
                     'DownloadedOn' , 'Error', 'FilePath' |
                     Export-Excel @excelParams
                 }
@@ -533,7 +535,7 @@ Process {
             catch {
                 $M = $_
                 Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
-                    
+
                 $inputFile.Error = $_
                 $error.RemoveAt(0)
             }
@@ -574,7 +576,7 @@ End {
                 $Error.Exception.Message | Measure-Object
             ).Count
         }
-            
+
         $totalCounter.All.Errors += $totalCounter.SystemErrors
         #endregion
 
@@ -602,17 +604,17 @@ End {
                     ).Count
                 }
             }
-            
+
             $totalCounter.All.RowsInExcel += $counter.RowsInExcel
             $totalCounter.All.DownloadedFiles += $counter.DownloadedFiles
             $totalCounter.All.Errors += (
-                $counter.Errors.InExcelFile + 
-                $counter.Errors.InTasks + 
+                $counter.Errors.InExcelFile +
+                $counter.Errors.InTasks +
                 $counter.Errors.DownloadingFiles +
                 $counter.Errors.Other
             )
             #endregion
-                
+
             #region Create HTML table
             $htmlTableTasks += "
                 <table>
@@ -671,9 +673,9 @@ End {
                 )
                 $(
                     foreach (
-                        $task in 
+                        $task in
                         (
-                            $inputFile.Tasks | 
+                            $inputFile.Tasks |
                             Sort-Object {$_.DownloadFolder.Name}
                         )
                     ) {
@@ -684,15 +686,15 @@ End {
                             "<tr>
                             <td style=``"background-color: red``">{0}/{1}</td>
                             <td style=``"background-color: red``">{2}{3}</td>
-                            </tr>"     
+                            </tr>"
                         } else {
                             "<tr>
                                 <td>{0}/{1}</td>
                                 <td>{2}{3}</td>
-                            </tr>" 
+                            </tr>"
                         }
 
-                        $template -f 
+                        $template -f
                         $(
                             $task.Job.Result.Where({$_.DownloadedOn}).Count
                         ),
@@ -704,7 +706,7 @@ End {
                         ),
                         $(
                             if ($errorCount) {
-                                ' ({0} error{1})' -f 
+                                ' ({0} error{1})' -f
                                 $errorCount, $(if ($errorCount -ne 1) {'s'})
                             }
                         )
@@ -721,7 +723,7 @@ End {
 
         #region Mail subject and priority
         $mailParams.Priority = 'Normal'
-        $mailParams.Subject = '{0}/{1} file{2} downloaded' -f 
+        $mailParams.Subject = '{0}/{1} file{2} downloaded' -f
         $totalCounter.All.DownloadedFiles,
         $totalCounter.All.RowsInExcel,
         $(
@@ -742,17 +744,17 @@ End {
 
         #region Create error html lists
         $systemErrorsHtmlList = if ($totalCounter.SystemErrors) {
-            "<p>Detected <b>{0} system error{1}</b>:{2}</p>" -f $totalCounter.SystemErrors, 
+            "<p>Detected <b>{0} system error{1}</b>:{2}</p>" -f $totalCounter.SystemErrors,
             $(
                 if ($totalCounter.SystemErrors -ne 1) { 's' }
             ),
             $(
-                $Error.Exception.Message | Where-Object { $_ } | 
+                $Error.Exception.Message | Where-Object { $_ } |
                 ConvertTo-HtmlListHC
             )
         }
         #endregion
-        
+
         $mailParams += @{
             To        = $MailTo
             Bcc       = $ScriptAdmin
@@ -764,7 +766,7 @@ End {
             Header    = $ScriptName
             Save      = $LogFile + ' - Mail.html'
         }
-   
+
         Get-ScriptRuntimeHC -Stop
         Send-MailHC @mailParams
         #endregion
